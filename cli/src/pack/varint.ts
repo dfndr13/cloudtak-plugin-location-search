@@ -2,7 +2,6 @@
 
 export function encodeVarint(value: number, out: number[]): void {
     let v = value >>> 0;
-    // eslint-disable-next-line no-constant-condition
     while (true) {
         if (v < 0x80) {
             out.push(v);

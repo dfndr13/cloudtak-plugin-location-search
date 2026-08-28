@@ -127,6 +127,32 @@ buttons — did nothing when clicked and left the pane stuck open. Fixed with a 
 component (`AddressSearchShareWrapper.vue`) that listens for those emits itself and calls
 `api.float.remove()`, rather than editing CloudTAK core.
 
+**A real gap in this repo's own verification convention, found and fixed 2026-08-28.** Every prior
+check copied the plugin into `~/CloudTAK/api/web/plugins/` with `cli/`/`test/`/`bench/` stripped
+out first, specifically so `vue-tsc`'s unfiltered `include` wouldn't try to typecheck the Node-only
+CLI tool. That check always passed clean — but the plugin is actually **symlinked in unstripped**
+in real dev/production use, and two things in the untouched-until-now `cli/`/`test/` files broke
+CloudTAK's own `vue-tsc`/`eslint`/`vite build` gates against the *real* symlink: `vitest.config.ts`
+(both the root one and `cli/`'s) used `defineConfig` from `vitest/config`, pulling this plugin's
+own vitest version's types into CloudTAK's TS program and conflicting with CloudTAK's own vitest
+devDependency; and `test/setup.ts` imported `fake-indexeddb` (a plugin-only test dependency,
+correctly never a runtime import, but still unresolvable from `api/web`'s own `node_modules`).
+Fixed by making both `vitest.config.ts` files plain object literals instead of `defineConfig(...)`
+calls (functionally identical to vitest at runtime — `defineConfig` is only a TS type-helper, not
+required), and passing `fake-indexeddb/auto` as a bare string in `setupFiles` instead of importing
+it through a local `test/setup.ts` — vitest resolves that string via Node's own module resolution
+at test-run time, never through TypeScript's type-checking pass, exactly like the worker's own
+`?worker&url` string import already sidesteps typed resolution for the same underlying reason.
+Also cleaned up a few CloudTAK-host-eslint-only complaints stripping never caught (`bench/run.ts`'s
+`prefer-const`, unused `eslint-disable` comments for rules the host config doesn't enable, unused
+`MockWorker` constructor params). Re-verified against the real unstripped symlink directly (not a
+stripped copy): `vue-tsc --noEmit`, `eslint`, and `npm run build` (with `search-worker-*.js`
+correctly landing in `dist/assets/`) all clean. **Going forward, verify against the real symlink
+directly** (`~/CloudTAK/api/web/plugins/address-search`, already present) rather than only the
+stripped copy — the stripped copy still has a place for isolating whether an error is plugin-side
+vs. host-config-side, but it is not sufficient on its own to prove the plugin won't break
+CloudTAK's own build.
+
 ## Layout
 
 | Path | Purpose |

@@ -99,11 +99,10 @@ async function main() {
     async function bench(label: string, queries: readonly string[], targetMs: number, expectVia?: string) {
         const timings: number[] = [];
         let matched = 0;
-        let matchedVia: Record<string, number> = {};
+        const matchedVia: Record<string, number> = {};
 
         for (const q of queries) {
             const start = performance.now();
-            // eslint-disable-next-line no-await-in-loop
             const results = await index.search(q, { reference, limit: 5 });
             timings.push(performance.now() - start);
             if (results.length > 0) {

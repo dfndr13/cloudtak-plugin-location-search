@@ -12,7 +12,7 @@ class MockWorker {
     postedMessages: WorkerRequest[] = [];
     terminated = false;
 
-    constructor(_url: URL, _opts?: WorkerOptions) {
+    constructor() {
         MockWorker.instances.push(this);
     }
 

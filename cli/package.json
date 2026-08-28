@@ -1,0 +1,24 @@
+{
+    "name": "cloudtak-address-search-cli",
+    "version": "0.1.0",
+    "description": "Offline CLI: OpenAddresses export -> compact .pack file consumed by the CloudTAK address-search plugin. Never bundled by CloudTAK's Vite build, so unlike the browser plugin code this package may carry real runtime dependencies.",
+    "type": "module",
+    "private": true,
+    "bin": {
+        "cloudtak-address-pack": "./src/index.ts"
+    },
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "typecheck": "tsc --noEmit"
+    },
+    "comment": "No build step: Node 23.6+ runs TypeScript directly (type-stripping), so `node src/index.ts ...` and vitest both work unmodified. `typecheck` is the only place tsc is invoked, for real type errors.",
+    "dependencies": {
+        "commander": "^12.1.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "typescript": "^5.7.0",
+        "vitest": "^3.2.4"
+    }
+}

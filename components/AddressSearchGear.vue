@@ -20,7 +20,7 @@
                     @change='onToggleDataset(dataset.datasetId, $event)'
                 >
                 <strong>{{ dataset.label }}</strong>
-                <span class='address-search-gear__muted'>{{ dataset.addressCount.toLocaleString() }} addresses</span>
+                <span class='address-search-gear__muted'>{{ datasetCountLabel(dataset) }}</span>
                 <div
                     role='button'
                     tabindex='0'
@@ -194,6 +194,14 @@ const apiKeyValue = ref('');
 const defaultPack = ref<DefaultPackConfig | undefined>(undefined);
 const defaultLabelInput = ref('');
 const defaultUrlInput = ref('');
+
+/** Phase 8: a gazetteer dataset has no house numbers, so "addresses" would be a misleading label
+ *  for its record count — branch on kind rather than reusing the address wording for both. */
+function datasetCountLabel(dataset: DatasetRecord): string {
+    return dataset.kind === "gazetteer"
+        ? `${dataset.recordCount.toLocaleString()} places`
+        : `${dataset.addressCount.toLocaleString()} addresses`;
+}
 
 function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`;

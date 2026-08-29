@@ -11,20 +11,18 @@
  * concatenate/re-slice step the way a single pre-joined "dict" blob would.
  */
 import { openDatabase, withDatabase } from "./idb.ts";
-import type { PackManifest } from "../pack/types.ts";
+import type { PackManifest, GazetteerManifest } from "../pack/types.ts";
 
 export const DB_NAME = "cloudtak-address-search";
 export const DB_VERSION = 1;
 export const DATASETS_STORE = "datasets";
 export const SECTIONS_STORE = "sections";
 
-export interface DatasetRecord {
+interface DatasetRecordCommon {
     datasetId: string;
     label: string;
     region: string;
-    addressCount: number;
     cellSizeDeg: number;
-    manifest: PackManifest;
     enabled: boolean;
     createdAt: string;
     /** Set when loaded via the fetch-from-URL path (decision #3) — absent for a file-picker load. */
@@ -32,6 +30,27 @@ export interface DatasetRecord {
     /** Result of `navigator.storage.persist()` at load time (docs/PLAN.md §5). */
     persisted: boolean;
 }
+
+export interface AddressDatasetRecord extends DatasetRecordCommon {
+    kind: "address";
+    addressCount: number;
+    manifest: PackManifest;
+}
+
+export interface GazetteerDatasetRecord extends DatasetRecordCommon {
+    kind: "gazetteer";
+    recordCount: number;
+    manifest: GazetteerManifest;
+}
+
+/**
+ * A dataset predating Phase 8 (address-only) has no `kind` field at all in storage — real state
+ * on the user's own dev/VPS CloudTAK instances, not a hypothetical. `dataset-store.ts`'s
+ * `listDatasets`/`getDataset` default a record read back with no `kind` to `"address"` before it
+ * ever reaches this type, so every in-memory `DatasetRecord` is always one of these two tagged
+ * variants — never require a storage migration step.
+ */
+export type DatasetRecord = AddressDatasetRecord | GazetteerDatasetRecord;
 
 export function sectionKey(datasetId: string, sectionId: string): string {
     return `${datasetId}:${sectionId}`;

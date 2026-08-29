@@ -6,10 +6,10 @@
  * the caller actually needs the rows, not here.
  */
 import { readPackManifest, getSection, verifySection } from "./container.ts";
-import type { PackManifest } from "./types.ts";
+import type { PackManifest, GazetteerManifest } from "./types.ts";
 
-export interface PackSource {
-    manifest(): Promise<PackManifest>;
+export interface PackSource<M = PackManifest> {
+    manifest(): Promise<M>;
     readSection(id: string): Promise<Uint8Array>;
 }
 
@@ -17,22 +17,29 @@ export interface PackSource {
  * Loads an entire `.pack` file into memory once and slices sections out of it. Good enough for
  * the Phase 2 Node bench harness (packs are tens of MB, not hundreds); the real browser runtime
  * reads sections lazily from IndexedDB instead of holding the whole file resident.
+ *
+ * Generic over the manifest shape so the same class opens either pack "kind" — pass
+ * `readGazetteerManifest` as `readManifestFn` to open a version-2 gazetteer pack (see
+ * test/gazetteer-index.spec.ts); every existing address call site is unaffected since the default
+ * (`readPackManifest`) and default type param (`PackManifest`) match today's behavior exactly.
  */
-export class InMemoryPackSource implements PackSource {
+export class InMemoryPackSource<M extends PackManifest | GazetteerManifest = PackManifest> implements PackSource<M> {
     private readonly bytes: Uint8Array;
-    private manifestCache: PackManifest | undefined;
+    private readonly readManifestFn: (bytes: Uint8Array) => M;
+    private manifestCache: M | undefined;
 
     // Plain field assignment, not a constructor parameter property — Node's native TypeScript
     // execution only supports erasable syntax, and parameter properties require a real transform
     // (injecting `this.x = x`), so they fail under `node file.ts` even though esbuild-based
     // tooling like vitest silently accepts them. See docs/PACK_FORMAT.md's sibling note in
     // package.json about running .ts files directly with no build step.
-    constructor(bytes: Uint8Array) {
+    constructor(bytes: Uint8Array, readManifestFn: (bytes: Uint8Array) => M = readPackManifest as (bytes: Uint8Array) => M) {
         this.bytes = bytes;
+        this.readManifestFn = readManifestFn;
     }
 
-    async manifest(): Promise<PackManifest> {
-        if (!this.manifestCache) this.manifestCache = readPackManifest(this.bytes);
+    async manifest(): Promise<M> {
+        if (!this.manifestCache) this.manifestCache = this.readManifestFn(this.bytes);
         return this.manifestCache;
     }
 

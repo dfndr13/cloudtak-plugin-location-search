@@ -18,7 +18,9 @@ import KV from '../../../src/base/kv.ts'; // your own plugin's core-bridge.ts, p
 const raw = await KV.value('addresssearch:manifest');
 if (raw) {
     const manifest = JSON.parse(raw); // AddressSearchManifest — see cross-plugin-api.d.ts
-    // manifest.datasets: [{ label, region, addressCount, enabled }, ...]
+    // manifest.datasets: [{ label, region, enabled, kind, addressCount? | recordCount? }, ...]
+    // kind: "gazetteer" datasets (place names, e.g. USGS GNIS-derived) carry recordCount instead
+    // of addressCount — check `kind` before assuming which one is present.
 }
 ```
 
@@ -41,6 +43,12 @@ if (!api) {
 Both methods degrade internally (an empty array / `undefined`) rather than throwing on an internal
 failure — but the primary check is still the global's own presence, since that's what tells you
 whether the plugin is there at all.
+
+A result may come from a place-name (gazetteer) dataset instead of a street address — check
+`result.sourceKind`. When it's `"gazetteer"`, `featureClass`/`county`/`state` are populated (e.g.
+`{ featureClass: "Summit", county: "Coconino", state: "AZ" }`) and every address-only field
+(`number`, `streetDisplay`, `city`, `postcode`, `units`) is left at its empty default rather than
+holding place data.
 
 ## Why a `window` global, not something else
 

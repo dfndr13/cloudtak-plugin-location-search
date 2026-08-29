@@ -8,18 +8,21 @@ import { idbGet } from "./idb.ts";
 import { withAddressSearchDb, SECTIONS_STORE, sectionKey } from "./schema.ts";
 import { verifySection, getSection } from "../pack/container.ts";
 import type { PackSource } from "../pack/pack-source.ts";
-import type { PackManifest } from "../pack/types.ts";
+import type { PackManifest, GazetteerManifest } from "../pack/types.ts";
 
-export class IndexedDbPackSource implements PackSource {
+/** Generic over the manifest shape so the same class backs either dataset kind — every existing
+ *  address call site (`new IndexedDbPackSource(dataset.datasetId, dataset.manifest)`) keeps
+ *  compiling unchanged since `M` is inferred as `PackManifest` from the argument. */
+export class IndexedDbPackSource<M extends PackManifest | GazetteerManifest = PackManifest> implements PackSource<M> {
     private readonly datasetId: string;
-    private readonly manifestValue: PackManifest;
+    private readonly manifestValue: M;
 
-    constructor(datasetId: string, manifest: PackManifest) {
+    constructor(datasetId: string, manifest: M) {
         this.datasetId = datasetId;
         this.manifestValue = manifest;
     }
 
-    async manifest(): Promise<PackManifest> {
+    async manifest(): Promise<M> {
         return this.manifestValue;
     }
 

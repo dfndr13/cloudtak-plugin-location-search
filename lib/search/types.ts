@@ -31,6 +31,16 @@ export interface SearchResult {
     /** Higher is better. Internal ranking score, not meant for display. */
     score: number;
     distanceMeters: number | null;
+    /** Set by `GazetteerIndex` (Phase 8) to `"gazetteer"` for a place-name hit; absent (meaning
+     *  `"address"`) for every existing `SearchIndex`-produced result — widened, not replaced, same
+     *  approach as `matchedVia`'s `"reverse"` addition in Phase 5. Every address-only field above
+     *  (`number`, `numberExtra`, `streetDisplay`, `city`, `postcode`, `units`) is left at its
+     *  honest empty default on a gazetteer hit rather than repurposed to hold place data. */
+    sourceKind?: "address" | "gazetteer";
+    /** Set only when `sourceKind === "gazetteer"` — e.g. "Summit", "Stream". */
+    featureClass?: string;
+    county?: string;
+    state?: string;
 }
 
 export interface ParsedQuery {

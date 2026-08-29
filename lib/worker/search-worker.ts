@@ -8,18 +8,27 @@
  * effect on the next query without needing an explicit "refresh" message from the main thread.
  */
 import { SearchIndex } from "../search/search-index.ts";
+import { GazetteerIndex } from "../search/gazetteer-index.ts";
 import { IndexedDbPackSource } from "../storage/pack-source-idb.ts";
 import { listDatasets } from "../storage/dataset-store.ts";
 import type { DatasetRecord } from "../storage/schema.ts";
 import type { GeoPoint, SearchOptions, SearchResult } from "../search/types.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
-const indexes = new Map<string, SearchIndex>();
+/** Anything both index kinds are called through identically here — `search`/`reverseLookup`
+ *  have the same signature on `SearchIndex` and `GazetteerIndex`, so callers below don't need to
+ *  know which kind they're holding. */
+type AnyIndex = SearchIndex | GazetteerIndex;
 
-async function ensureLoaded(dataset: DatasetRecord): Promise<SearchIndex> {
+const indexes = new Map<string, AnyIndex>();
+
+async function ensureLoaded(dataset: DatasetRecord): Promise<AnyIndex> {
     const existing = indexes.get(dataset.datasetId);
     if (existing) return existing;
-    const index = await SearchIndex.open(new IndexedDbPackSource(dataset.datasetId, dataset.manifest));
+    const index: AnyIndex =
+        dataset.kind === "gazetteer"
+            ? await GazetteerIndex.open(new IndexedDbPackSource(dataset.datasetId, dataset.manifest))
+            : await SearchIndex.open(new IndexedDbPackSource(dataset.datasetId, dataset.manifest));
     indexes.set(dataset.datasetId, index);
     return index;
 }

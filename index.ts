@@ -34,6 +34,12 @@ function toPublicResult(result: SearchResult) {
         postcode: result.postcode,
         units: result.units,
         distanceMeters: result.distanceMeters,
+        // Phase 8: present (sourceKind: "gazetteer") for a place-name hit, absent for an address
+        // hit — same widen-don't-replace approach as internal SearchResult itself.
+        sourceKind: result.sourceKind,
+        featureClass: result.featureClass,
+        county: result.county,
+        state: result.state,
     };
 }
 

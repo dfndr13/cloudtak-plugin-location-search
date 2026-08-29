@@ -4,7 +4,20 @@
  */
 import { idbDelete, idbDeleteRange, idbGet, idbGetAll, idbPut, prefixRange } from "./idb.ts";
 import { withAddressSearchDb, DATASETS_STORE, SECTIONS_STORE, type DatasetRecord } from "./schema.ts";
-import type { PackManifest } from "../pack/types.ts";
+import type { PackManifest, GazetteerManifest } from "../pack/types.ts";
+
+/**
+ * A dataset stored before Phase 8 has no `kind` field in IndexedDB at all — it's structurally an
+ * `AddressDatasetRecord` minus that one field, since address was the only kind that existed then.
+ * Every read (`listDatasets`/`getDataset`) passes the raw record through this before it's treated
+ * as a `DatasetRecord`, so the rest of the codebase never has to think about the legacy shape.
+ * The inner cast is a deliberate storage-boundary crossing, not a lie about `DatasetRecord`'s own
+ * shape — same convention as this plugin's other IndexedDB/pack boundary casts.
+ */
+function normalizeDataset(record: DatasetRecord): DatasetRecord {
+    const kind = (record as { kind?: DatasetRecord["kind"] }).kind;
+    return kind ? record : ({ ...record, kind: "address" } as DatasetRecord);
+}
 
 export function generateDatasetId(): string {
     return crypto.randomUUID();
@@ -23,22 +36,35 @@ async function requestPersistence(): Promise<boolean> {
     }
 }
 
-export function listDatasets(): Promise<DatasetRecord[]> {
-    return withAddressSearchDb((db) => idbGetAll<DatasetRecord>(db, DATASETS_STORE));
+export async function listDatasets(): Promise<DatasetRecord[]> {
+    const records = await withAddressSearchDb((db) => idbGetAll<DatasetRecord>(db, DATASETS_STORE));
+    return records.map(normalizeDataset);
 }
 
-export function getDataset(datasetId: string): Promise<DatasetRecord | undefined> {
-    return withAddressSearchDb((db) => idbGet<DatasetRecord>(db, DATASETS_STORE, datasetId));
+export async function getDataset(datasetId: string): Promise<DatasetRecord | undefined> {
+    const record = await withAddressSearchDb((db) => idbGet<DatasetRecord>(db, DATASETS_STORE, datasetId));
+    return record ? normalizeDataset(record) : undefined;
 }
 
-export interface NewDatasetInput {
-    label: string;
-    region: string;
-    addressCount: number;
-    cellSizeDeg: number;
-    manifest: PackManifest;
-    sourceUrl?: string;
-}
+export type NewDatasetInput =
+    | {
+          kind: "address";
+          label: string;
+          region: string;
+          addressCount: number;
+          cellSizeDeg: number;
+          manifest: PackManifest;
+          sourceUrl?: string;
+      }
+    | {
+          kind: "gazetteer";
+          label: string;
+          region: string;
+          recordCount: number;
+          cellSizeDeg: number;
+          manifest: GazetteerManifest;
+          sourceUrl?: string;
+      };
 
 /**
  * Creates a dataset record. The default-enabled rule (decision #8: "default is one enabled") is
@@ -55,18 +81,20 @@ export async function createDataset(
     datasetId: string = generateDatasetId(),
 ): Promise<DatasetRecord> {
     const persisted = await requestPersistence();
-    const record: DatasetRecord = {
+    const base = {
         datasetId,
         label: input.label,
         region: input.region,
-        addressCount: input.addressCount,
         cellSizeDeg: input.cellSizeDeg,
-        manifest: input.manifest,
         enabled,
         createdAt: new Date().toISOString(),
         sourceUrl: input.sourceUrl,
         persisted,
     };
+    const record: DatasetRecord =
+        input.kind === "address"
+            ? { ...base, kind: "address", addressCount: input.addressCount, manifest: input.manifest }
+            : { ...base, kind: "gazetteer", recordCount: input.recordCount, manifest: input.manifest };
     await withAddressSearchDb((db) => idbPut(db, DATASETS_STORE, record));
     return record;
 }
@@ -75,7 +103,7 @@ export function setEnabled(datasetId: string, enabled: boolean): Promise<void> {
     return withAddressSearchDb(async (db) => {
         const record = await idbGet<DatasetRecord>(db, DATASETS_STORE, datasetId);
         if (!record) throw new Error(`dataset not found: ${datasetId}`);
-        await idbPut(db, DATASETS_STORE, { ...record, enabled });
+        await idbPut(db, DATASETS_STORE, { ...normalizeDataset(record), enabled });
     });
 }
 
@@ -83,7 +111,7 @@ export function renameDataset(datasetId: string, label: string): Promise<void> {
     return withAddressSearchDb(async (db) => {
         const record = await idbGet<DatasetRecord>(db, DATASETS_STORE, datasetId);
         if (!record) throw new Error(`dataset not found: ${datasetId}`);
-        await idbPut(db, DATASETS_STORE, { ...record, label });
+        await idbPut(db, DATASETS_STORE, { ...normalizeDataset(record), label });
     });
 }
 

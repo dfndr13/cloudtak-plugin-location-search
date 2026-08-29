@@ -116,7 +116,7 @@
                     :checked='dataset.enabled'
                     @change='onToggleDataset(dataset.datasetId, $event)'
                 >
-                {{ dataset.label }} <span class='address-search-bar__muted'>({{ dataset.addressCount.toLocaleString() }})</span>
+                {{ dataset.label }} <span class='address-search-bar__muted'>({{ datasetCount(dataset).toLocaleString() }})</span>
             </label>
         </div>
 
@@ -207,6 +207,11 @@ const defaultLoadError = ref('');
 const defaultProgress = ref<UploadProgress>({ sectionsDone: 0, sectionsTotal: 0, bytesDone: 0, bytesTotal: 0 });
 
 let debounceHandle: ReturnType<typeof setTimeout> | null = null;
+
+/** Phase 8: a gazetteer dataset counts places, not addresses — same branch as AddressSearchGear.vue. */
+function datasetCount(dataset: DatasetRecord): number {
+    return dataset.kind === "gazetteer" ? dataset.recordCount : dataset.addressCount;
+}
 
 async function refreshDatasets(): Promise<void> {
     try {

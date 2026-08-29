@@ -35,7 +35,7 @@ step — just pass all of them to the same `build` command.
 ```sh
 cd cli
 npm install
-node src/index.ts build /path/to/maricopa.geojson /path/to/coconino.geojson \
+node src/index.ts build /path/to/county1.geojson /path/to/county2.geojson \
   --out az-statewide.pack \
   --region "AZ"
 ```
@@ -44,7 +44,7 @@ node src/index.ts build /path/to/maricopa.geojson /path/to/coconino.geojson \
   combined into a single pack — one county, or every county in a state).
 - `--out <path>` (required) is where the finished `.pack` file gets written.
 - `--region <label>` (required) is a free-text label shown in the plugin's UI (e.g. `"AZ"` or
-  `"AZ-Maricopa"`) — it's cosmetic, not a data format requirement.
+  `"AZ-County1"`) — it's cosmetic, not a data format requirement.
 - `--cell-size <degrees>` (optional, default `0.005`) controls the reverse-lookup grid size — the
   default is fine for normal use; you'd only change this for a very sparse or very dense region.
   `--chunk-budget <bytes>` (optional) controls internal chunking and almost never needs setting.

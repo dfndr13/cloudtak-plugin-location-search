@@ -27,6 +27,18 @@ export interface AddressSearchResult {
     units: string[];
     /** Straight-line distance in meters from the search's reference point, or `null` if none was given. */
     distanceMeters: number | null;
+    /**
+     * Present (`"gazetteer"`) for a place-name hit (mountains, streams, populated places — from a
+     * loaded USGS GNIS-derived dataset); absent for a street-address hit. Every address-only field
+     * above (`number`, `numberExtra`, `streetDisplay`, `city`, `postcode`, `units`) is left at its
+     * honest empty default on a gazetteer hit rather than repurposed to hold place data — use
+     * `featureClass`/`county`/`state` instead for that case.
+     */
+    sourceKind?: "address" | "gazetteer";
+    /** Set only when `sourceKind === "gazetteer"` — e.g. "Summit", "Stream", "Populated Place". */
+    featureClass?: string;
+    county?: string;
+    state?: string;
 }
 
 /** One loaded dataset's public summary — everything internal (the full pack manifest, storage
@@ -34,8 +46,12 @@ export interface AddressSearchResult {
 export interface AddressSearchManifestDataset {
     label: string;
     region: string;
-    addressCount: number;
     enabled: boolean;
+    kind: "address" | "gazetteer";
+    /** Present when `kind === "address"`. */
+    addressCount?: number;
+    /** Present when `kind === "gazetteer"`. */
+    recordCount?: number;
 }
 
 /**

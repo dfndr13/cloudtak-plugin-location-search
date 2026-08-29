@@ -7,8 +7,8 @@
 import { idbPut } from "./idb.ts";
 import { withAddressSearchDb, SECTIONS_STORE, sectionKey, type DatasetRecord } from "./schema.ts";
 import { createDataset, generateDatasetId, listDatasets } from "./dataset-store.ts";
-import { readPackManifest, verifySection } from "../pack/container.ts";
-import type { PackManifest } from "../pack/types.ts";
+import { readPackManifest, readGazetteerManifest, verifySection } from "../pack/container.ts";
+import { PACK_VERSION_GAZETTEER, type PackManifest, type GazetteerManifest } from "../pack/types.ts";
 
 export interface UploadProgress {
     sectionsDone: number;
@@ -31,16 +31,32 @@ function peekManifestLength(headerBytes: Uint8Array): number {
     return new DataView(headerBytes.buffer, headerBytes.byteOffset, headerBytes.byteLength).getUint32(8, true);
 }
 
-async function readManifest(reader: ByteRangeReader): Promise<PackManifest> {
+function peekVersion(headerBytes: Uint8Array): number {
+    return new DataView(headerBytes.buffer, headerBytes.byteOffset, headerBytes.byteLength).getUint32(4, true);
+}
+
+type ReadManifestResult =
+    | { kind: "address"; manifest: PackManifest }
+    | { kind: "gazetteer"; manifest: GazetteerManifest };
+
+/**
+ * Detects the pack "kind" from its own version byte (no new UI control needed — the gear panel's
+ * existing file-picker/URL-input flow just works for either kind) and routes to the matching
+ * reader. This is the ONLY place that decision gets made.
+ */
+async function readManifest(reader: ByteRangeReader): Promise<ReadManifestResult> {
     const header = await reader.readRange(0, 12);
+    const version = peekVersion(header);
     const manifestLength = peekManifestLength(header);
     const full = await reader.readRange(0, 12 + manifestLength);
-    return readPackManifest(full);
+    return version === PACK_VERSION_GAZETTEER
+        ? { kind: "gazetteer", manifest: readGazetteerManifest(full) }
+        : { kind: "address", manifest: readPackManifest(full) };
 }
 
 async function writeSections(
     reader: ByteRangeReader,
-    manifest: PackManifest,
+    manifest: PackManifest | GazetteerManifest,
     datasetId: string,
     onProgress?: (p: UploadProgress) => void,
 ): Promise<void> {
@@ -60,24 +76,33 @@ async function writeSections(
 }
 
 async function finalizeDataset(
-    manifest: PackManifest,
+    parsed: ReadManifestResult,
     datasetId: string,
     opts: UploadOptions & { sourceUrl?: string },
 ): Promise<DatasetRecord> {
     const existing = await listDatasets();
     const enabled = existing.length === 0; // decision #8: default is one enabled
-    return createDataset(
-        {
-            label: opts.label ?? manifest.region,
-            region: manifest.region,
-            addressCount: manifest.addressCount,
-            cellSizeDeg: manifest.cellSizeDeg,
-            manifest,
-            sourceUrl: opts.sourceUrl,
-        },
-        enabled,
-        datasetId,
-    );
+    const input =
+        parsed.kind === "address"
+            ? {
+                  kind: "address" as const,
+                  label: opts.label ?? parsed.manifest.region,
+                  region: parsed.manifest.region,
+                  addressCount: parsed.manifest.addressCount,
+                  cellSizeDeg: parsed.manifest.cellSizeDeg,
+                  manifest: parsed.manifest,
+                  sourceUrl: opts.sourceUrl,
+              }
+            : {
+                  kind: "gazetteer" as const,
+                  label: opts.label ?? `${parsed.manifest.region} (${parsed.manifest.sourceName})`,
+                  region: parsed.manifest.region,
+                  recordCount: parsed.manifest.recordCount,
+                  cellSizeDeg: parsed.manifest.cellSizeDeg,
+                  manifest: parsed.manifest,
+                  sourceUrl: opts.sourceUrl,
+              };
+    return createDataset(input, enabled, datasetId);
 }
 
 class FileRangeReader implements ByteRangeReader {
@@ -95,10 +120,10 @@ class FileRangeReader implements ByteRangeReader {
 
 export async function loadFromFile(file: File, opts: UploadOptions = {}): Promise<DatasetRecord> {
     const reader = new FileRangeReader(file);
-    const manifest = await readManifest(reader);
+    const parsed = await readManifest(reader);
     const datasetId = generateDatasetId();
-    await writeSections(reader, manifest, datasetId, opts.onProgress);
-    return finalizeDataset(manifest, datasetId, opts);
+    await writeSections(reader, parsed.manifest, datasetId, opts.onProgress);
+    return finalizeDataset(parsed, datasetId, opts);
 }
 
 /**
@@ -137,8 +162,8 @@ class UrlRangeReader implements ByteRangeReader {
 
 export async function loadFromUrl(url: string, opts: UploadOptions = {}): Promise<DatasetRecord> {
     const reader = new UrlRangeReader(url);
-    const manifest = await readManifest(reader);
+    const parsed = await readManifest(reader);
     const datasetId = generateDatasetId();
-    await writeSections(reader, manifest, datasetId, opts.onProgress);
-    return finalizeDataset(manifest, datasetId, { ...opts, sourceUrl: url });
+    await writeSections(reader, parsed.manifest, datasetId, opts.onProgress);
+    return finalizeDataset(parsed, datasetId, { ...opts, sourceUrl: url });
 }

@@ -10,8 +10,12 @@ import type { DatasetRecord } from "./storage/schema.ts";
 export interface AddressSearchManifestDataset {
     label: string;
     region: string;
-    addressCount: number;
     enabled: boolean;
+    kind: "address" | "gazetteer";
+    /** Present when `kind === "address"`. */
+    addressCount?: number;
+    /** Present when `kind === "gazetteer"` (Phase 8). */
+    recordCount?: number;
 }
 
 export interface AddressSearchManifest {
@@ -27,8 +31,9 @@ export function buildManifest(datasets: readonly DatasetRecord[]): AddressSearch
         datasets: datasets.map((d) => ({
             label: d.label,
             region: d.region,
-            addressCount: d.addressCount,
             enabled: d.enabled,
+            kind: d.kind,
+            ...(d.kind === "address" ? { addressCount: d.addressCount } : { recordCount: d.recordCount }),
         })),
     };
 }

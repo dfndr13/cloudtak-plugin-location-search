@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { PACK_MAGIC, PACK_VERSION, type PackManifest, type PackSectionMeta } from "./types.ts";
+import {
+    PACK_MAGIC,
+    PACK_VERSION,
+    PACK_VERSION_GAZETTEER,
+    type PackManifest,
+    type PackSectionMeta,
+    type GazetteerManifest,
+} from "./types.ts";
 
 export interface SectionInput {
     id: string;

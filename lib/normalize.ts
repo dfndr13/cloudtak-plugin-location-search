@@ -125,3 +125,33 @@ export function splitHouseNumber(raw: string): { number: number; extra: string }
     const [, digits, rest] = match;
     return { number: Number.parseInt(digits!, 10), extra: rest!.trim() };
 }
+
+/**
+ * Unicode NFD decomposition + strip combining marks — "Cañon" -> "Canon". `.toUpperCase()` does
+ * NOT ASCII-fold accented Latin letters, so without this, `basicNormalize`'s punctuation strip
+ * (`[^A-Z0-9\s]`) would blank an accented letter to a space instead — silently breaking trigram
+ * matching for a name like "Cañon City" against a plain-ASCII typed query. Used for gazetteer
+ * (place-name) matching, not street/place normalization above, which is USPS/ASCII by convention.
+ */
+export function foldDiacritics(value: string): string {
+    return value.normalize("NFD").replace(/\p{Mark}/gu, "");
+}
+
+/**
+ * Match-form for a gazetteer (place-name) record: diacritic-folded, then the same
+ * uppercase/punctuation-strip/whitespace-collapse `basicNormalize` already does for streets. No
+ * suffix/directional canonicalization — that's a street-address convention with no equivalent for
+ * a mountain or stream name.
+ */
+export function normalizeGazetteerNameForMatch(nameRaw: string): string {
+    return basicNormalize(foldDiacritics(nameRaw));
+}
+
+/**
+ * Display form for a gazetteer record: sources like USGS GNIS already provide human-facing
+ * casing and diacritics, so this only trims/collapses whitespace rather than re-casing the way
+ * `normalizeStreetForDisplay` does for often-all-caps OpenAddresses street data.
+ */
+export function normalizeGazetteerNameForDisplay(nameRaw: string): string {
+    return nameRaw.trim().replace(/\s+/g, " ");
+}

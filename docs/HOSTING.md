@@ -1,9 +1,15 @@
 # Hosting `.pack` files for the fetch-from-URL load path
 
-The gear panel's "Load from URL" field (`lib/storage/upload.ts`'s `loadFromUrl`) lets one person
-host a `.pack` file once and everyone else load it by pasting the URL, instead of each person
-running the CLI themselves. This works with **any** reachable static host — it doesn't need to be
-CloudTAK-specific, and per decision #14 nothing about it requires touching CloudTAK itself.
+**Required for any shared/production CloudTAK instance** — see the main
+[README's setup walkthrough](../README.md#4-host-the-pack-file-required-for-more-than-one-user)
+for why. Address data lives in each browser's own local IndexedDB, never on a server, so there is
+no way for one person's file-picker upload to reach anyone else. The gear panel's "Load from URL"
+field (`lib/storage/upload.ts`'s `loadFromUrl`) is the only path that lets everyone get the same
+data without you handing each person the `.pack` file directly — and that only works once
+something is actually serving it over HTTP.
+
+This works with **any** reachable static host — it doesn't need to be CloudTAK-specific, and per
+decision #14 nothing about it requires touching CloudTAK itself.
 
 Two things that were ruled out, and why (see the Phase 3 planning discussion for the full
 reasoning): `api/web/plugins/<name>/` can't serve raw files — Vite bundles everything there as JS

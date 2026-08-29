@@ -14,5 +14,5 @@
         "types": ["node"]
     },
     "include": ["lib/**/*.ts", "test/**/*.ts", "bench/**/*.ts"],
-    "exclude": ["lib/core-bridge.ts", "lib/state.ts"]
+    "exclude": ["lib/core-bridge.ts", "lib/state.ts", "lib/manifest-sync.ts"]
 }

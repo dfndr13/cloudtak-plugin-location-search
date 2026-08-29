@@ -8,14 +8,24 @@ import { getSection } from "../pack/container.ts";
 import { decodeStringTable } from "../pack/strings.ts";
 import { decodeGroups } from "../pack/groups.ts";
 import { decodeTrigramPostings } from "../pack/trigrams.ts";
+import { decodeCellDir } from "../pack/cells.ts";
 import { parseQuery } from "./query-parse.ts";
 import { prefixRange, streetIdsInRange } from "./prefix-search.ts";
 import { trigramCandidateStreetIds, verifyFuzzyCandidates, MIN_FUZZY_QUERY_LENGTH } from "./fuzzy-search.ts";
 import { rankGroups, type StreetMatch } from "./ranker.ts";
-import { resolveNumber, collectUnitSiblings } from "./number-resolver.ts";
+import { resolveNumber, collectUnitSiblings, type NumberResolution } from "./number-resolver.ts";
 import { ChunkCache } from "./chunk-cache.ts";
+import { haversineMeters } from "./distance.ts";
+import {
+    buildChunkFirstOrdinals,
+    buildGroupsByChunk,
+    candidateOrdinals,
+    chunkForOrdinal,
+    groupForRowOffset,
+    type DecodedCellDir,
+} from "./reverse-lookup.ts";
 import type { PackSource } from "../pack/pack-source.ts";
-import type { SearchOptions, SearchResult, NumberMatchKind } from "./types.ts";
+import type { GeoPoint, SearchOptions, SearchResult, NumberMatchKind } from "./types.ts";
 import type { DecodedGroup, PackManifest, TrigramPostings } from "../pack/types.ts";
 
 /** Below this many prefix-path candidates, engage the fuzzy path too (PLAN.md §4.1 step 3). */
@@ -25,6 +35,7 @@ const DEFAULT_LIMIT = 10;
 const TOP_GROUPS_FOR_NUMBER_RESOLUTION = 10;
 
 export class SearchIndex {
+    private readonly source: PackSource;
     private readonly manifest: PackManifest;
     private readonly streets: readonly string[];
     private readonly streetsDisplay: readonly string[];
@@ -34,10 +45,16 @@ export class SearchIndex {
     private readonly groups: readonly DecodedGroup[];
     private readonly trigrams: TrigramPostings;
     private readonly chunkCache: ChunkCache;
+    /** Resident per PLAN.md §3.3 — the small cell directory, plus the two derived indices Phase 5
+     *  needs to turn a `cellLists` ordinal back into an address (see lib/search/reverse-lookup.ts). */
+    private readonly cellDir: DecodedCellDir;
+    private readonly chunkFirstOrdinals: readonly number[];
+    private readonly groupsByChunk: ReadonlyMap<number, DecodedGroup[]>;
 
     // Plain field assignment, not constructor parameter properties — see the note in
     // lib/pack/pack-source.ts's constructor for why (Node's native TS execution can't strip them).
     private constructor(
+        source: PackSource,
         manifest: PackManifest,
         streets: readonly string[],
         streetsDisplay: readonly string[],
@@ -47,7 +64,9 @@ export class SearchIndex {
         groups: readonly DecodedGroup[],
         trigrams: TrigramPostings,
         chunkCache: ChunkCache,
+        cellDir: DecodedCellDir,
     ) {
+        this.source = source;
         this.manifest = manifest;
         this.streets = streets;
         this.streetsDisplay = streetsDisplay;
@@ -57,21 +76,27 @@ export class SearchIndex {
         this.groups = groups;
         this.trigrams = trigrams;
         this.chunkCache = chunkCache;
+        this.cellDir = cellDir;
+        this.chunkFirstOrdinals = buildChunkFirstOrdinals(manifest);
+        this.groupsByChunk = buildGroupsByChunk(groups);
     }
 
     static async open(source: PackSource): Promise<SearchIndex> {
         const manifest = await source.manifest();
-        const [streetsBuf, streetsDisplayBuf, placesBuf, unitsBuf, numberExtraBuf, groupsBuf, trigramsBuf] = await Promise.all([
-            source.readSection("streets"),
-            source.readSection("streetsDisplay"),
-            source.readSection("places"),
-            source.readSection("units"),
-            source.readSection("numberExtra"),
-            source.readSection("groups"),
-            source.readSection("trigrams"),
-        ]);
+        const [streetsBuf, streetsDisplayBuf, placesBuf, unitsBuf, numberExtraBuf, groupsBuf, trigramsBuf, cellDirBuf] =
+            await Promise.all([
+                source.readSection("streets"),
+                source.readSection("streetsDisplay"),
+                source.readSection("places"),
+                source.readSection("units"),
+                source.readSection("numberExtra"),
+                source.readSection("groups"),
+                source.readSection("trigrams"),
+                source.readSection("cellDir"),
+            ]);
 
         return new SearchIndex(
+            source,
             manifest,
             decodeStringTable(streetsBuf),
             decodeStringTable(streetsDisplayBuf),
@@ -81,6 +106,7 @@ export class SearchIndex {
             decodeGroups(groupsBuf, getSection(manifest, "groups").count!),
             decodeTrigramPostings(trigramsBuf),
             new ChunkCache(source, manifest),
+            decodeCellDir(cellDirBuf, getSection(manifest, "cellDir").count!),
         );
     }
 
@@ -131,6 +157,65 @@ export class SearchIndex {
             });
         }
         return results;
+    }
+
+    /**
+     * PLAN.md §4.2: the nearest address to a clicked point, or `undefined` if nothing is found
+     * within `MAX_REVERSE_LOOKUP_RADIUS` cells (rural areas with no data nearby). `cellLists` is
+     * fetched fresh per call rather than kept resident — see lib/search/reverse-lookup.ts's own
+     * doc comment for why that matches this storage layer's actual read granularity.
+     */
+    async reverseLookup(point: GeoPoint): Promise<SearchResult | undefined> {
+        const cellListsBlob = await this.source.readSection("cellLists");
+        const ordinals = candidateOrdinals(point.lat, point.lon, this.manifest.cellSizeDeg, this.cellDir, cellListsBlob);
+        if (ordinals.length === 0) return undefined;
+
+        let best: { result: SearchResult; distanceMeters: number } | undefined;
+        for (const ordinal of ordinals) {
+            const chunkId = chunkForOrdinal(this.chunkFirstOrdinals, ordinal);
+            const rowOffset = ordinal - this.chunkFirstOrdinals[chunkId]!;
+            const groupsInChunk = this.groupsByChunk.get(chunkId);
+            const group = groupsInChunk && groupForRowOffset(groupsInChunk, rowOffset);
+            // Only reachable with a malformed pack (an ordinal with no owning group) — degrade
+            // rather than throw, same convention as the rest of this class's chunk/group handling.
+            if (!group) continue;
+
+            const rows = await this.chunkCache.getRows(chunkId);
+            const row = rows[rowOffset];
+            if (!row) continue;
+
+            const lat = group.centroidLatE7 / 1e7 + row.latD / 1e7;
+            const lon = group.centroidLonE7 / 1e7 + row.lonD / 1e7;
+            const distanceMeters = haversineMeters(point, { lat, lon });
+            if (best && distanceMeters >= best.distanceMeters) continue;
+
+            const resolution: NumberResolution = { row, rowIndex: rowOffset, matchedVia: "exact" };
+            const { representative, unitList } = collectUnitSiblings(rows, group, resolution, this.units);
+            const streetDisplay = this.streetsDisplay[group.streetId] ?? "";
+            const city = this.places[group.placeId] ?? "";
+            const postcode = this.places[group.postcodeId] ?? "";
+            const numberExtra = this.numberExtras[representative.numExtra] ?? "";
+
+            best = {
+                distanceMeters,
+                result: {
+                    displayAddress: this.formatDisplayAddress(representative.number, numberExtra, streetDisplay, city, postcode),
+                    lat: group.centroidLatE7 / 1e7 + representative.latD / 1e7,
+                    lon: group.centroidLonE7 / 1e7 + representative.lonD / 1e7,
+                    number: representative.number,
+                    numberExtra,
+                    streetDisplay,
+                    city,
+                    postcode,
+                    units: unitList,
+                    matchedVia: "reverse",
+                    numberMatchedVia: "exact",
+                    score: 100,
+                    distanceMeters,
+                },
+            };
+        }
+        return best?.result;
     }
 
     private matchStreets(streetQuery: string): StreetMatch[] {

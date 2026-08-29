@@ -4,14 +4,20 @@
  * file carries all the rebase risk, and every accessor degrades instead of throwing so a core
  * rename doesn't take the whole plugin down with it.
  *
- * Two things live here: GPS for ranking (PLAN.md §4.1 step 4, decision #11 — "nearest to GPS
- * first; automatic fallback to map center when there is no fix"), and the Phase 4 drop-marker
- * write path — both need the map store's internals, which `PluginAPI` doesn't expose (only
- * `map`, `feature.list/stream`, neither of which covers location state or writes).
+ * GPS for ranking (PLAN.md §4.1 step 4, decision #11 — "nearest to GPS first; automatic fallback
+ * to map center when there is no fix"), the Phase 4 drop-marker write path, Phase 5's core-draw
+ * mutual exclusion, and Phase 6's `db.kv` manifest publish all live here — none of them are
+ * covered by `PluginAPI` (only `map`, `feature.list/stream`, neither of which covers location
+ * state, writes, `DrawTool.mode`, or `db.kv`).
  */
 import type { Pinia } from "pinia";
 import { useMapStore } from "../../../src/stores/map.ts";
+import KV from "../../../src/base/kv.ts";
 import type { GeoPoint } from "./search/types.ts";
+
+/** The cross-plugin contract's namespaced `db.kv` key (PLAN.md §6) — kept here rather than in
+ *  lib/manifest-sync.ts since it's the literal string passed to a core import. */
+export const MANIFEST_KV_KEY = "addresssearch:manifest";
 
 /** Core's own contact/channel/mission share dialog — re-exported here rather than imported
  *  directly from a component, per PLAN.md §9.1's rule that every deep core reach (including a
@@ -145,5 +151,59 @@ export async function dropMarker(pinia: Pinia, opts: DropMarkerOptions): Promise
     } catch (err) {
         console.error("[address-search] failed to drop marker", err);
         return undefined;
+    }
+}
+
+/** Mirrors core's own `DrawToolMode.STATIC` (`api/web/src/stores/modules/draw.ts:36`) — the value
+ *  `DrawTool.mode` holds when core isn't drawing anything. */
+const CORE_DRAW_STATIC_MODE = "static";
+
+/**
+ * Is CloudTAK's own Drawing Tools surface currently active? Reads `DrawTool.mode`, a `ref` behind
+ * a getter, so this is reactive and safe inside a Vue `watch`/`computed` — exactly the pattern
+ * `~/dev/cloudtak-plugin-measure/lib/core-bridge.ts`'s `isCoreDrawActive()` already uses for its
+ * own mutual exclusion against core draw. Duplicated here rather than imported, since plugins
+ * never import each other's internals — only core's, one at a time.
+ *
+ * PLAN.md §4.2/§10: reverse-lookup mode must stand down the instant core's own draw activates.
+ * There is no equivalent signal for "another plugin (e.g. measure) is active" — its own toggle
+ * state is a private module singleton, not exposed anywhere — so this covers exactly what §10's
+ * own risk mitigation scopes to, matching what measure itself relies on for the same problem.
+ * Returns `false` if the field is missing — a missing field must never make reverse-lookup think
+ * core drawing is permanently active.
+ */
+export function isCoreDrawActive(pinia: Pinia): boolean {
+    try {
+        const mapStore = useMapStore(pinia) as unknown as { draw?: { mode?: string } };
+        const mode = mapStore.draw?.mode;
+        if (typeof mode !== "string") return false;
+        return mode !== CORE_DRAW_STATIC_MODE;
+    } catch (err) {
+        console.warn("[address-search] failed to read core draw mode", err);
+        return false;
+    }
+}
+
+/**
+ * Publishes the Phase 6 cross-plugin manifest (PLAN.md §6) to CloudTAK's own `db.kv`, under
+ * `MANIFEST_KV_KEY`. Unlike every other function in this file, `KV`'s static methods talk to the
+ * shared Dexie `db` directly and need no `pinia`/`mapStore` at all — still belongs here rather
+ * than in lib/manifest-sync.ts since it's the one place doing the actual `../../../src/...` reach.
+ */
+export async function writeManifestKv(json: string): Promise<void> {
+    try {
+        await KV.update(MANIFEST_KV_KEY, json);
+    } catch (err) {
+        console.error("[address-search] failed to publish cross-plugin manifest", err);
+    }
+}
+
+/** Removes the manifest key on `disable()` — the mechanism that makes "consumers degrade
+ *  gracefully when the key is absent" (PLAN.md §6) actually true once this plugin is turned off. */
+export async function deleteManifestKv(): Promise<void> {
+    try {
+        await KV.delete(MANIFEST_KV_KEY);
+    } catch (err) {
+        console.warn("[address-search] failed to remove cross-plugin manifest", err);
     }
 }

@@ -87,3 +87,33 @@ describe("SearchIndex, against a real pack built from the shared fixture", () =>
         expect(await index.search("12345")).toEqual([]);
     });
 });
+
+describe("SearchIndex.reverseLookup, against the same real pack (PLAN.md §4.2)", () => {
+    let index: SearchIndex;
+
+    beforeAll(async () => {
+        const { pack } = await buildPack({ inputFiles: [FIXTURE], region: "AZ" });
+        index = await SearchIndex.open(new InMemoryPackSource(new Uint8Array(pack)));
+    });
+
+    it("finds the nearest address to a point exactly on a known address", async () => {
+        const [known] = await index.search("123 Main St");
+        const hit = await index.reverseLookup({ lat: known!.lat, lon: known!.lon });
+        expect(hit).toBeDefined();
+        expect(hit!.displayAddress).toBe(known!.displayAddress);
+        expect(hit!.matchedVia).toBe("reverse");
+        expect(hit!.distanceMeters).toBeCloseTo(0, 1);
+    });
+
+    it("finds the nearest address to a point offset by a few metres, not just an exact hit", async () => {
+        const [known] = await index.search("123 Main St");
+        // ~5m north — comfortably inside the same cell, well under the 450m guarantee.
+        const hit = await index.reverseLookup({ lat: known!.lat + 0.00005, lon: known!.lon });
+        expect(hit).toBeDefined();
+        expect(hit!.displayAddress).toBe(known!.displayAddress);
+    });
+
+    it("returns undefined far from any data, after exhausting the widened radius", async () => {
+        expect(await index.reverseLookup({ lat: 0, lon: 0 })).toBeUndefined();
+    });
+});

@@ -28,14 +28,19 @@ export function cellKeyOf(lat: number, lon: number, cellSizeDeg: number): number
     return latIdxOf(lat, cellSizeDeg) * lonSteps(cellSizeDeg) + lonIdxOf(lon, cellSizeDeg);
 }
 
-/** The 9 cell keys (self + 8 neighbours) around a point — the read set for a reverse lookup. */
-export function neighbourCellKeys(lat: number, lon: number, cellSizeDeg: number): number[] {
+/**
+ * The cell keys within `radius` cells of a point (default 1 = the 9-cell self+neighbours read set
+ * for a reverse lookup, PLAN.md §4.2's "correct within ~450m" guarantee). Phase 5's ring-widening
+ * calls this with a larger radius when the initial 9 cells come up empty — see
+ * `lib/search/reverse-lookup.ts`.
+ */
+export function neighbourCellKeys(lat: number, lon: number, cellSizeDeg: number, radius = 1): number[] {
     const steps = lonSteps(cellSizeDeg);
     const latIdx = latIdxOf(lat, cellSizeDeg);
     const lonIdx = lonIdxOf(lon, cellSizeDeg);
     const keys: number[] = [];
-    for (let dLat = -1; dLat <= 1; dLat++) {
-        for (let dLon = -1; dLon <= 1; dLon++) {
+    for (let dLat = -radius; dLat <= radius; dLat++) {
+        for (let dLon = -radius; dLon <= radius; dLon++) {
             keys.push((latIdx + dLat) * steps + (lonIdx + dLon));
         }
     }

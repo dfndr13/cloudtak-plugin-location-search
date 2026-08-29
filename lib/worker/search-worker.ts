@@ -11,7 +11,7 @@ import { SearchIndex } from "../search/search-index.ts";
 import { IndexedDbPackSource } from "../storage/pack-source-idb.ts";
 import { listDatasets } from "../storage/dataset-store.ts";
 import type { DatasetRecord } from "../storage/schema.ts";
-import type { SearchOptions, SearchResult } from "../search/types.ts";
+import type { GeoPoint, SearchOptions, SearchResult } from "../search/types.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 const indexes = new Map<string, SearchIndex>();
@@ -54,9 +54,22 @@ async function handleSearch(query: string, opts: SearchOptions = {}): Promise<Se
     return mergeResults(perDataset, limit);
 }
 
+/** PLAN.md §4.2: nearest address across every currently-enabled dataset, mirroring how forward
+ *  search already merges across datasets (decision #8) — just picking the single closest hit
+ *  instead of a ranked+limited list. */
+async function handleReverseLookup(point: GeoPoint): Promise<SearchResult | undefined> {
+    await syncLoadedIndexes();
+    const perDataset = await Promise.all([...indexes.values()].map((index) => index.reverseLookup(point)));
+    const hits = perDataset.filter((r): r is SearchResult => r !== undefined);
+    if (hits.length === 0) return undefined;
+    hits.sort((a, b) => (a.distanceMeters ?? Number.POSITIVE_INFINITY) - (b.distanceMeters ?? Number.POSITIVE_INFINITY));
+    return hits[0];
+}
+
 /** Each handler takes the request's `args` array as-is; casting to the expected shape is local to each entry. */
 const handlers: Record<string, (args: unknown[]) => Promise<unknown>> = {
     search: (args) => handleSearch(args[0] as string, args[1] as SearchOptions | undefined),
+    reverseLookup: (args) => handleReverseLookup(args[0] as GeoPoint),
     refresh: () => syncLoadedIndexes(),
 };
 

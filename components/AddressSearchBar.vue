@@ -13,6 +13,19 @@
                 role='button'
                 tabindex='0'
                 class='address-search-bar__icon-btn'
+                :class='{ "address-search-bar__icon-btn--active": reverseArmed }'
+                title='Click the map for the nearest address'
+                @click='toggleReverseLookup'
+            >
+                <IconCrosshair
+                    :size='18'
+                    stroke='2'
+                />
+            </div>
+            <div
+                role='button'
+                tabindex='0'
+                class='address-search-bar__icon-btn'
                 title='Datasets'
                 @click='menuOpen = !menuOpen'
             >
@@ -29,6 +42,18 @@
                 @click='openGear'
             >
                 <IconSettings
+                    :size='18'
+                    stroke='2'
+                />
+            </div>
+            <div
+                role='button'
+                tabindex='0'
+                class='address-search-bar__icon-btn'
+                title='Help'
+                @click='openHelp'
+            >
+                <IconHelpCircle
                     :size='18'
                     stroke='2'
                 />
@@ -129,17 +154,21 @@
 </template>
 
 <script setup lang='ts'>
-import { onMounted, ref, watch } from 'vue';
-import { IconDatabase, IconMapPinPlus, IconSettings, IconX } from '@tabler/icons-vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { IconCrosshair, IconDatabase, IconHelpCircle, IconMapPinPlus, IconSettings, IconX } from '@tabler/icons-vue';
+import type { MapMouseEvent } from 'maplibre-gl';
 import { api, close, pinia, workerClient } from '../lib/state.ts';
-import { gpsReference } from '../lib/core-bridge.ts';
+import { gpsReference, isCoreDrawActive } from '../lib/core-bridge.ts';
 import { listDatasets, setEnabled } from '../lib/storage/dataset-store.ts';
+import { syncManifestKv } from '../lib/manifest-sync.ts';
 import type { DatasetRecord } from '../lib/storage/schema.ts';
 import type { SearchResult } from '../lib/search/types.ts';
 import AddressSearchGear from './AddressSearchGear.vue';
+import AddressSearchHelp from './AddressSearchHelp.vue';
 import AddressSearchDropPrompt from './AddressSearchDropPrompt.vue';
 
 const GEAR_FLOAT_UID = 'address-search-gear';
+const HELP_FLOAT_UID = 'address-search-help';
 const DEBOUNCE_MS = 90;
 
 const query = ref('');
@@ -149,6 +178,7 @@ const menuOpen = ref(false);
 const datasets = ref<DatasetRecord[]>([]);
 const inputEl = ref<HTMLInputElement | null>(null);
 const dropOpenIndex = ref<number | null>(null);
+const reverseArmed = ref(false);
 
 let debounceHandle: ReturnType<typeof setTimeout> | null = null;
 
@@ -165,6 +195,7 @@ async function onToggleDataset(datasetId: string, event: Event): Promise<void> {
     await setEnabled(datasetId, checked);
     await workerClient.value?.refresh();
     await refreshDatasets();
+    void syncManifestKv();
 }
 
 function mapCenterFallback(): { lat: number; lon: number } | undefined {
@@ -206,6 +237,62 @@ function selectResult(result: SearchResult): void {
     close();
 }
 
+/**
+ * PLAN.md §4.2: reverse-lookup mode is a one-shot arm, never a standing listener — arming attaches
+ * a single `click` handler that fires once and immediately detaches itself, which is also the main
+ * mitigation for click contention with other plugins (there's no way to detect a sibling plugin's
+ * own active state — see `isCoreDrawActive()`'s own doc comment).
+ */
+function toggleReverseLookup(): void {
+    if (reverseArmed.value) disarmReverseLookup();
+    else armReverseLookup();
+}
+
+function armReverseLookup(): void {
+    const map = api.value?.map;
+    if (!map) return;
+    reverseArmed.value = true;
+    map.getCanvas().style.cursor = 'crosshair';
+    map.on('click', handleReverseClick);
+}
+
+function disarmReverseLookup(): void {
+    reverseArmed.value = false;
+    const map = api.value?.map;
+    if (!map) return;
+    map.off('click', handleReverseClick);
+    map.getCanvas().style.cursor = '';
+}
+
+async function handleReverseClick(e: MapMouseEvent): Promise<void> {
+    const point = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+    disarmReverseLookup();
+    dropOpenIndex.value = null;
+    try {
+        const hit = await workerClient.value?.reverseLookup(point);
+        results.value = hit ? [hit] : [];
+    } catch (err) {
+        console.warn('[address-search] reverse lookup failed', err);
+        results.value = [];
+    }
+    searched.value = true;
+}
+
+// Mutual exclusion with core's own Drawing Tools (PLAN.md §10) — mirrors the exact pattern
+// ~/dev/cloudtak-plugin-measure/components/MeasureToggle.vue uses against the same signal.
+watch(
+    () => (pinia.value ? isCoreDrawActive(pinia.value) : false),
+    (coreActive) => {
+        if (coreActive && reverseArmed.value) disarmReverseLookup();
+    },
+);
+
+onBeforeUnmount(() => {
+    // The bar itself unmounts when the toggle button collapses it — never leave a dangling map
+    // click listener or a stuck crosshair cursor behind.
+    if (reverseArmed.value) disarmReverseLookup();
+});
+
 function openGear(): void {
     if (!api.value) return;
     api.value.float.add({
@@ -214,6 +301,17 @@ function openGear(): void {
         component: AddressSearchGear,
         width: 420,
         height: 480,
+    });
+}
+
+function openHelp(): void {
+    if (!api.value) return;
+    api.value.float.add({
+        uid: HELP_FLOAT_UID,
+        name: 'Address Search Help',
+        component: AddressSearchHelp,
+        width: 380,
+        height: 460,
     });
 }
 
@@ -256,6 +354,9 @@ onMounted(() => {
 }
 .address-search-bar__icon-btn:hover {
     background-color: rgba(128, 128, 128, 0.2);
+}
+.address-search-bar__icon-btn--active {
+    background-color: rgba(60, 140, 255, 0.35);
 }
 .address-search-bar__panel {
     max-height: 260px;

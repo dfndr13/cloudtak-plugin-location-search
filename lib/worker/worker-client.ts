@@ -16,7 +16,7 @@
  * file in this plugin already does.
  */
 import SearchWorkerUrl from "./search-worker.ts?worker&url";
-import type { SearchOptions, SearchResult } from "../search/types.ts";
+import type { GeoPoint, SearchOptions, SearchResult } from "../search/types.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 interface PendingRequest {
@@ -59,6 +59,12 @@ export class SearchWorkerClient {
 
     async search(query: string, opts?: SearchOptions): Promise<SearchResult[]> {
         return (await this.call("search", [query, opts])) as SearchResult[];
+    }
+
+    /** PLAN.md §4.2 — the nearest address to a clicked map point, or `undefined` if nothing is
+     *  within range across every enabled dataset. */
+    async reverseLookup(point: GeoPoint): Promise<SearchResult | undefined> {
+        return (await this.call("reverseLookup", [point])) as SearchResult | undefined;
     }
 
     /** Forces an immediate reload of enabled datasets, rather than waiting for the next search. */

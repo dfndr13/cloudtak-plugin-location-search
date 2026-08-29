@@ -118,6 +118,7 @@ import { IconTrash } from '@tabler/icons-vue';
 import { workerClient } from '../lib/state.ts';
 import { listDatasets, removeDataset, setEnabled } from '../lib/storage/dataset-store.ts';
 import { loadFromFile, loadFromUrl, type UploadProgress } from '../lib/storage/upload.ts';
+import { syncManifestKv } from '../lib/manifest-sync.ts';
 import type { DatasetRecord } from '../lib/storage/schema.ts';
 
 const API_KEY_STORAGE_PREFIX = 'cloudtak-address-search:api-key:';
@@ -144,12 +145,14 @@ async function onToggleDataset(datasetId: string, event: Event): Promise<void> {
     await setEnabled(datasetId, (event.target as HTMLInputElement).checked);
     await workerClient.value?.refresh();
     await refresh();
+    void syncManifestKv();
 }
 
 async function onRemove(datasetId: string): Promise<void> {
     await removeDataset(datasetId);
     await workerClient.value?.refresh();
     await refresh();
+    void syncManifestKv();
 }
 
 async function onFilePicked(event: Event): Promise<void> {
@@ -161,6 +164,7 @@ async function onFilePicked(event: Event): Promise<void> {
         await loadFromFile(file, { onProgress: (p) => (progress.value = p) });
         await workerClient.value?.refresh();
         await refresh();
+        void syncManifestKv();
     } catch (err) {
         errorMessage.value = err instanceof Error ? err.message : String(err);
     } finally {
@@ -177,6 +181,7 @@ async function onLoadFromUrl(): Promise<void> {
         await loadFromUrl(url, { onProgress: (p) => (progress.value = p) });
         await workerClient.value?.refresh();
         await refresh();
+        void syncManifestKv();
         urlInput.value = '';
     } catch (err) {
         errorMessage.value = err instanceof Error ? err.message : String(err);

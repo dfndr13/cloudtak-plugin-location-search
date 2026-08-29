@@ -23,7 +23,10 @@ export interface SearchResult {
     postcode: string;
     /** Sibling unit strings at this base address (PLAN.md §3.3/decision #12 — units collapse to the base address). */
     units: string[];
-    matchedVia: MatchKind;
+    /** `"reverse"` (Phase 5) means this came from a click-on-map lookup, not text matching — kept
+     *  separate from `MatchKind` itself since that type is shared with `StreetMatch.tier`, where
+     *  "reverse" would never apply (see `lib/search/ranker.ts`'s exhaustive `TIER_ORDER`). */
+    matchedVia: MatchKind | "reverse";
     numberMatchedVia: NumberMatchKind;
     /** Higher is better. Internal ranking score, not meant for display. */
     score: number;

@@ -8,56 +8,77 @@ field (`lib/storage/upload.ts`'s `loadFromUrl`) is the only path that lets every
 data without you handing each person the `.pack` file directly — and that only works once
 something is actually serving it over HTTP.
 
-This works with **any** reachable static host — it doesn't need to be CloudTAK-specific, and per
-decision #14 nothing about it requires touching CloudTAK itself.
+## Recommended: serve it directly from your own CloudTAK deployment
 
-Two things that were ruled out, and why (see the Phase 3 planning discussion for the full
-reasoning): `api/web/plugins/<name>/` can't serve raw files — Vite bundles everything there as JS
-source, not static passthrough. `api/web/public/` technically could (Vite copies it verbatim to
-the served dist), but it's **git-tracked** in most CloudTAK forks, so a 40–200MB binary there would
-bloat that repo's history.
+If you run CloudTAK's own `docker-compose.yml` (most self-hosted/VPS setups do), the simplest and
+most robust option is serving the `.pack` file from the **exact same origin as CloudTAK itself** —
+no separate container, no CORS, no CSP change, no reverse-proxy route, and no rebuild needed for
+future data updates.
 
-## Recommended: a plain static-file-server container
+This works because of two things confirmed directly in CloudTAK's own source:
 
-A minimal, dependency-free container in whatever stack you run CloudTAK in — nginx, or something
-even simpler like [`halverneus/static-file-server`](https://github.com/halverneus/static-file-server),
-serving a directory of `.pack` files:
+- `api/nginx.conf.js`'s catch-all `location /` block (`alias /home/etl/api/web/dist/; try_files
+  $uri ... /index.html;`) serves **any file physically present** in that directory straight off
+  disk — nginx's static-file serving handles `Range` requests automatically, with no extra config.
+- That directory (`/home/etl/api/web/dist/`) is a normal path inside the running `api` container,
+  so a plain Docker bind-mount makes anything you drop on the host side show up there live.
+
+Add a volume to the **existing `api` service** in your `docker-compose.yml` — no new service:
 
 ```yaml
-# docker-compose.yml (illustrative — merge into your existing stack)
+services:
+  api:
+    volumes:
+      - ./data/address-packs:/home/etl/api/web/dist/address-packs
+```
+
+Then, on the VPS:
+
+```sh
+mkdir -p ./data/address-packs   # create it yourself so it's owned by your user, not root
+docker compose up -d api        # restart once, to pick up the new mount
+scp az-statewide.pack youruser@your-vps:/path/to/compose/dir/data/address-packs/
+```
+
+The file is now reachable at `https://<your-cloudtak-domain>/address-packs/az-statewide.pack` —
+same origin as CloudTAK, so `Access-Control-Allow-Origin`/CSP's `connect-src` (both already permit
+`'self'`) need no changes, and there's no mixed-content risk. Adding or replacing a `.pack` later
+is just another `scp` into that same host folder — no container restart, no rebuild, no redeploy.
+
+Two things this rules out, for the record: `api/web/plugins/<name>/` can't serve raw files at all
+(Vite bundles everything there as JS source). `api/web/public/` looks tempting since Vite copies it
+verbatim into `dist/` — but that copy happens **once, at Docker build time**; a file dropped into
+`public/` on an already-running container is never picked up, since nothing re-reads it after the
+image is built. `dist/` (via the bind-mount above) is the directory actually served at runtime.
+
+## Alternative: a separate static-file-server container
+
+Useful if you don't control the CloudTAK deployment directly (e.g. someone else manages that
+`docker-compose.yml`) and can't add a volume to its `api` service — host the `.pack` file anywhere
+else reachable instead. This needs its own CORS setup, since it's now a different origin than
+CloudTAK:
+
+```yaml
+# docker-compose.yml (illustrative — a separate stack, or your own compose file)
 services:
   address-packs:
     image: halverneus/static-file-server:latest
     ports:
-      - "8081:8080"   # HOST:CONTAINER — change the left side freely, see note below
+      - "8081:8080"   # HOST:CONTAINER — the left side is arbitrary, pick any free host port
     volumes:
       - ./data/address-packs:/web
     environment:
       CORS: "true"
 ```
 
-**Neither port number is fixed by this plugin.** `8081:8080` is Docker's `HOST:CONTAINER` port
-mapping — `8080` (right side) is just `halverneus/static-file-server`'s own internal default (that
-image's choice, overridable via its own `PORT` env var if you ever needed to), and `8081` (left
-side) is completely arbitrary. Change the left side to whatever host port is actually free in your
-stack — `9090:8080`, `8888:8080`, anything. The plugin itself has no awareness of a port at all;
-it just does an HTTP fetch to whatever URL you paste into the gear panel's "Load from URL" field.
+Drop `az-statewide.pack` into `./data/address-packs/`, and it's reachable at
+`http://<host>:<port>/az-statewide.pack`.
 
-Drop `az-statewide.pack` (or whatever regions you need) into `./data/address-packs/`, and it's
-reachable at `http://<host>:<whatever host port you chose>/az-statewide.pack` — use that exact URL
-in the gear panel.
-
-## The part that actually matters: CORS
-
-The browser fetch in `loadFromUrl` runs from CloudTAK's own origin, so the static host **must**
-send `Access-Control-Allow-Origin` covering that origin (or `*`, if the files aren't sensitive —
-they're derived from public OpenAddresses data, so `*` is reasonable here). Without it, the
-fetch fails silently-ish with a CORS error in the console, not a clean HTTP error — this is
-exactly the "CORS spike" PLAN.md's Phase 0 flagged as outstanding, now resolved by testing against
-a real mocked host in `test/upload.spec.ts` and documented here for the real deployment case.
-
-`halverneus/static-file-server`'s `CORS: "true"` environment variable sends a permissive
-`Access-Control-Allow-Origin: *`. If you use plain nginx instead, add:
+**The part that actually matters here: CORS.** The browser fetch in `loadFromUrl` runs from
+CloudTAK's own origin, so this separate host **must** send `Access-Control-Allow-Origin` covering
+that origin (or `*` — the files aren't sensitive, they're derived from public OpenAddresses data).
+`halverneus/static-file-server`'s `CORS: "true"` sends a permissive `Access-Control-Allow-Origin:
+*`. If you use plain nginx instead:
 
 ```nginx
 location /address-packs/ {
@@ -68,7 +89,14 @@ location /address-packs/ {
 ```
 
 `Range` matters specifically: `loadFromUrl` probes for `Range` support (HTTP 206) on the first
-request so section reads stay small and constant-memory, per PLAN.md §3.5. Most static file
-servers (nginx included) support `Range` requests out of the box for static files — just make sure
-CORS headers don't strip the `Range` request header or the `Content-Range`/`Accept-Ranges`
-response headers, which some default CORS configs do by only allowlisting a narrow header set.
+request so section reads stay small and constant-memory, per PLAN.md §3.5. Make sure CORS headers
+don't strip the `Range` request header or the `Content-Range`/`Accept-Ranges` response headers,
+which some default CORS configs do by only allowlisting a narrow header set.
+
+**Also relevant if this separate host is on a different domain than CloudTAK**: CloudTAK's own
+nginx config sets a Content-Security-Policy whose `connect-src` directive only permits `'self'`
+plus a short hardcoded allowlist by default. A browser `fetch()` to a *different* origin can be
+blocked by CSP even with CORS configured correctly. CloudTAK's `nginx.conf.js` supports appending
+extra allowed origins via an `NGINX_CSP_CONNECT_SRC` environment variable (comma-separated) on the
+`api` service — set that to your file host's origin if you go this route. (The recommended
+same-origin approach above needs none of this, since `'self'` already covers it.)

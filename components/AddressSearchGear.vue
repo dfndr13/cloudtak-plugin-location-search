@@ -43,6 +43,12 @@
         <hr>
 
         <h4>Add a dataset</h4>
+        <p class='address-search-gear__muted'>
+            Both options below load data into <strong>this browser only</strong> — neither one uploads or shares
+            anything. For other people to get the same data, host the <code>.pack</code> file somewhere reachable
+            (see <code>docs/HOSTING.md</code>) and have each person use "Load from URL" with that address.
+        </p>
+        <label class='address-search-gear__field-label'>From a file (this device only)</label>
         <div class='address-search-gear__add-row'>
             <input
                 type='file'
@@ -50,6 +56,7 @@
                 @change='onFilePicked'
             >
         </div>
+        <label class='address-search-gear__field-label'>From a URL (use this so everyone loads the same data)</label>
         <div class='address-search-gear__add-row'>
             <input
                 v-model='urlInput'
@@ -246,6 +253,12 @@ onMounted(() => {
     align-items: center;
     gap: 6px;
     margin: 6px 0;
+}
+.address-search-gear__field-label {
+    display: block;
+    font-size: 0.8em;
+    opacity: 0.7;
+    margin-top: 8px;
 }
 .address-search-gear__url-input {
     flex: 1;

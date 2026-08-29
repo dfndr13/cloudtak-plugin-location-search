@@ -80,28 +80,23 @@ or make the data available to anyone else. For every other user to get the same 
 handing them the file directly, the `.pack` needs to be reachable over HTTP so their browser can
 fetch it via the URL field.
 
-This can be genuinely minimal — see [`docs/HOSTING.md`](docs/HOSTING.md) for the full walkthrough,
-but the short version is one extra static-file-server container:
+If you run CloudTAK's own `docker-compose.yml`, the simplest way is serving it from the **same
+origin as CloudTAK itself** — no separate container, no CORS, no CSP change, and no rebuild needed
+for future data updates. Add a volume to the existing `api` service:
 
 ```yaml
-# add to your existing docker-compose.yml
 services:
-  address-packs:
-    image: halverneus/static-file-server:latest
-    ports:
-      - "8081:8080"
+  api:
     volumes:
-      - ./data/address-packs:/web
-    environment:
-      CORS: "true"
+      - ./data/address-packs:/home/etl/api/web/dist/address-packs
 ```
 
-Drop `az-statewide.pack` into `./data/address-packs/`, and it's reachable at
-`http://<your-host>:8081/az-statewide.pack`. The two things that actually matter — covered in full
-in `docs/HOSTING.md` — are CORS (the browser fetch runs from CloudTAK's own origin, so the file
-host must send `Access-Control-Allow-Origin`) and `Range` request support (so loading stays fast
-and low-memory instead of one giant fetch). `halverneus/static-file-server`'s `CORS: "true"`
-handles both out of the box.
+Restart the `api` service once to pick up the mount, then `scp` (or otherwise copy) `.pack` files
+into `./data/address-packs/` on the host — each one becomes reachable immediately at
+`https://<your-cloudtak-domain>/address-packs/<file>.pack`, live, with no further restarts. See
+[`docs/HOSTING.md`](docs/HOSTING.md) for the full explanation of why this works (nginx serves
+anything physically present in `dist/`) and an alternative (a standalone static-file-server
+container) for when you don't control the CloudTAK deployment directly.
 
 ### 5. Load the data
 

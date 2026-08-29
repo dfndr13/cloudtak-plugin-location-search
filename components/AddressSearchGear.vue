@@ -88,6 +88,59 @@
 
         <hr>
 
+        <h4>Default dataset (shared)</h4>
+        <p class='address-search-gear__muted'>
+            This is shared across <strong>everyone</strong> on this CloudTAK instance — set it once here, and any
+            user who opens the search bar with nothing loaded yet sees a one-click "Load" option with the label
+            below, instead of needing to know or paste a URL themselves.
+        </p>
+        <div
+            v-if='defaultPack'
+            class='address-search-gear__default-current'
+        >
+            Currently: <strong>{{ defaultPack.label }}</strong>
+            <span class='address-search-gear__muted'>({{ defaultPack.url }})</span>
+            <div
+                role='button'
+                tabindex='0'
+                class='address-search-gear__remove'
+                title='Clear default'
+                @click='onClearDefault'
+            >
+                <IconTrash
+                    :size='16'
+                    stroke='2'
+                />
+            </div>
+        </div>
+        <label class='address-search-gear__field-label'>Label (shown on the one-click button)</label>
+        <div class='address-search-gear__add-row'>
+            <input
+                v-model='defaultLabelInput'
+                type='text'
+                placeholder='AZ Statewide'
+                class='address-search-gear__url-input'
+            >
+        </div>
+        <label class='address-search-gear__field-label'>URL</label>
+        <div class='address-search-gear__add-row'>
+            <input
+                v-model='defaultUrlInput'
+                type='text'
+                placeholder='https://.../state.pack'
+                class='address-search-gear__url-input'
+            >
+            <button
+                type='button'
+                :disabled='!defaultLabelInput.trim() || !defaultUrlInput.trim()'
+                @click='onSaveDefault'
+            >
+                Save as default
+            </button>
+        </div>
+
+        <hr>
+
         <h4>Online fallback</h4>
         <p class='address-search-gear__muted'>
             Per-device only — never shared with other users or stored in the dataset manifest
@@ -126,6 +179,7 @@ import { workerClient } from '../lib/state.ts';
 import { listDatasets, removeDataset, setEnabled } from '../lib/storage/dataset-store.ts';
 import { loadFromFile, loadFromUrl, type UploadProgress } from '../lib/storage/upload.ts';
 import { syncManifestKv } from '../lib/manifest-sync.ts';
+import { clearDefaultPackConfig, readDefaultPackConfig, writeDefaultPackConfig, type DefaultPackConfig } from '../lib/core-bridge.ts';
 import type { DatasetRecord } from '../lib/storage/schema.ts';
 
 const API_KEY_STORAGE_PREFIX = 'cloudtak-address-search:api-key:';
@@ -137,6 +191,9 @@ const errorMessage = ref('');
 const progress = ref<UploadProgress>({ sectionsDone: 0, sectionsTotal: 0, bytesDone: 0, bytesTotal: 0 });
 const apiKeyProvider = ref<'geoapify' | 'locationiq' | 'radar' | 'here'>('geoapify');
 const apiKeyValue = ref('');
+const defaultPack = ref<DefaultPackConfig | undefined>(undefined);
+const defaultLabelInput = ref('');
+const defaultUrlInput = ref('');
 
 function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`;
@@ -197,6 +254,25 @@ async function onLoadFromUrl(): Promise<void> {
     }
 }
 
+async function refreshDefaultPack(): Promise<void> {
+    defaultPack.value = await readDefaultPackConfig();
+}
+
+async function onSaveDefault(): Promise<void> {
+    const label = defaultLabelInput.value.trim();
+    const url = defaultUrlInput.value.trim();
+    if (!label || !url) return;
+    await writeDefaultPackConfig({ label, url });
+    defaultLabelInput.value = '';
+    defaultUrlInput.value = '';
+    await refreshDefaultPack();
+}
+
+async function onClearDefault(): Promise<void> {
+    await clearDefaultPackConfig();
+    await refreshDefaultPack();
+}
+
 function saveApiKey(): void {
     try {
         localStorage.setItem(`${API_KEY_STORAGE_PREFIX}${apiKeyProvider.value}`, apiKeyValue.value);
@@ -217,6 +293,7 @@ watch(apiKeyProvider, loadApiKey);
 
 onMounted(() => {
     void refresh();
+    void refreshDefaultPack();
     loadApiKey();
 });
 </script>
@@ -235,6 +312,12 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+.address-search-gear__default-current {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
 }
 .address-search-gear__remove {
     margin-left: auto;

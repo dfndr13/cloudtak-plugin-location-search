@@ -105,6 +105,14 @@ In CloudTAK, click the search icon in the map controls, then the gear icon. Eith
 does the same with the same URL — each browser keeps its own local copy (see
 [Architecture](#architecture) for why), so this is a one-time step per person, not per instance.
 
+**Optional: make it a one-click option for everyone else.** In that same gear panel, under
+"Default dataset (shared)", enter a label and the hosting URL and click **Save as default**. This
+is stored server-side (CloudTAK's `db.kv`, not your browser), so *every other user* who opens the
+search bar with nothing loaded yet sees a single "Load `<label>`" button instead of needing to
+know or paste the URL themselves — one click, no typing. There's no admin/permission gate on this
+(the plugin API doesn't expose one), so anyone with the gear panel open can set or change it —
+worth keeping in mind since it affects everyone on the instance, not just the person setting it.
+
 ## Architecture
 
 Address data lives entirely in **the browser's own IndexedDB**, not on any CloudTAK server —

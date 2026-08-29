@@ -207,3 +207,52 @@ export async function deleteManifestKv(): Promise<void> {
         console.warn("[address-search] failed to remove cross-plugin manifest", err);
     }
 }
+
+/** `db.kv` key for the shared "default dataset" one-click config — whatever URL/label whoever
+ *  configures it in the gear panel sets, so every OTHER user sees a one-click "Load <label>"
+ *  option the first time they open the search bar with nothing loaded yet, instead of needing to
+ *  know or paste a URL themselves. */
+const DEFAULT_PACK_KV_KEY = "addresssearch:default-pack";
+
+export interface DefaultPackConfig {
+    url: string;
+    label: string;
+}
+
+/**
+ * Reads the shared default-dataset config, or `undefined` if none is set (or the stored value is
+ * malformed — degrade to "no default" rather than throw, so a bad value never blocks the rest of
+ * the UI). There is no admin/permission check here — `PluginAPI` exposes no role information at
+ * all, so this is readable and, in `writeDefaultPackConfig()`, writable by any user with the gear
+ * panel open. The gear panel's own label makes clear this setting is shared instance-wide, so a
+ * well-intentioned user knows the consequence, but nothing here can enforce who's allowed to set
+ * it.
+ */
+export async function readDefaultPackConfig(): Promise<DefaultPackConfig | undefined> {
+    try {
+        const raw = await KV.value(DEFAULT_PACK_KV_KEY);
+        if (!raw) return undefined;
+        const parsed = JSON.parse(raw) as Partial<DefaultPackConfig>;
+        if (typeof parsed.url !== "string" || typeof parsed.label !== "string" || !parsed.url.trim()) return undefined;
+        return { url: parsed.url, label: parsed.label };
+    } catch (err) {
+        console.warn("[address-search] failed to read default pack config", err);
+        return undefined;
+    }
+}
+
+export async function writeDefaultPackConfig(config: DefaultPackConfig): Promise<void> {
+    try {
+        await KV.update(DEFAULT_PACK_KV_KEY, JSON.stringify(config));
+    } catch (err) {
+        console.error("[address-search] failed to save default pack config", err);
+    }
+}
+
+export async function clearDefaultPackConfig(): Promise<void> {
+    try {
+        await KV.delete(DEFAULT_PACK_KV_KEY);
+    } catch (err) {
+        console.warn("[address-search] failed to clear default pack config", err);
+    }
+}

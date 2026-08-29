@@ -104,7 +104,7 @@
                 tabindex='0'
                 @click='openGear'
             >
-                No address datasets loaded — click to add one
+                No datasets loaded — click to add one
             </div>
             <label
                 v-for='dataset in datasets'

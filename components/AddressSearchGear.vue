@@ -1,6 +1,6 @@
 <template>
     <div class='address-search-gear'>
-        <h4>Address Datasets</h4>
+        <h4>Datasets</h4>
 
         <div
             v-if='datasets.length === 0'
@@ -45,8 +45,11 @@
         <h4>Add a dataset</h4>
         <p class='address-search-gear__muted'>
             Both options below load data into <strong>this browser only</strong> — neither one uploads or shares
-            anything. For other people to get the same data, host the <code>.pack</code> file somewhere reachable
-            (see <code>docs/HOSTING.md</code>) and have each person use "Load from URL" with that address.
+            anything. Works for either kind of <code>.pack</code> file this project's CLI can build — street
+            addresses (from OpenAddresses) or named places like mountains and trails (from USGS GNIS) — the
+            file/URL is auto-detected, there's no separate "type" to pick. For other people to get the same data,
+            host the <code>.pack</code> file somewhere reachable (see <code>docs/HOSTING.md</code>) and have each
+            person use "Load from URL" with that address.
         </p>
         <label class='address-search-gear__field-label'>From a file (this device only)</label>
         <div class='address-search-gear__add-row'>

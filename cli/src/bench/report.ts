@@ -1,4 +1,5 @@
 import type { BuildStats } from "../pack/build.ts";
+import type { GazetteerBuildStats } from "../pack/gazetteer.ts";
 
 function fmtBytes(n: number): string {
     if (n < 1024) return `${n} B`;
@@ -37,6 +38,39 @@ export function printReport(stats: BuildStats): void {
     if (chunkSizes.length > 0) {
         const totalChunkBytes = chunkSizes.reduce((sum, s) => sum + s.byteLength, 0);
         console.log(`chunks (${chunkSizes.length})`.padEnd(16) + ` ${fmtBytes(totalChunkBytes).padStart(10)}  (gzip, total)`);
+    }
+    console.log();
+    console.log(`total pack size:   ${fmtBytes(stats.totalByteLength)}`);
+}
+
+export function printGazetteerReport(stats: GazetteerBuildStats): void {
+    console.log("=== Gazetteer pack build report ===");
+    console.log(`raw features:      ${stats.rawFeatureCount}`);
+    console.log(`filtered (class):  ${stats.filteredCount}`);
+    console.log(`dropped (blank name/class/coords): ${stats.droppedCount}`);
+    console.log(`deduped:           ${stats.dedupedCount}`);
+    console.log(`records:           ${stats.recordCount}`);
+    console.log(`distinct names:    ${stats.nameCount}`);
+    console.log(`classes:           ${stats.classCount}`);
+    console.log(`places:            ${stats.placeCount}`);
+    console.log(`chunks:            ${stats.chunkCount}`);
+    console.log(`occupied cells:    ${stats.cellCount}`);
+    console.log(`trigrams:          ${stats.trigramCount}`);
+    console.log();
+    console.log("-- timings --");
+    for (const [label, ms] of Object.entries(stats.timings)) {
+        console.log(`${label.padEnd(14)} ${fmtMs(ms)}`);
+    }
+    console.log();
+    console.log("-- section sizes --");
+    const chunkSizes = stats.sectionSizes.filter((s) => s.id.startsWith("gnChunk:"));
+    const nonChunk = stats.sectionSizes.filter((s) => !s.id.startsWith("gnChunk:"));
+    for (const s of nonChunk) {
+        console.log(`${s.id.padEnd(16)} ${fmtBytes(s.byteLength).padStart(10)}${s.compressed ? "  (gzip)" : ""}`);
+    }
+    if (chunkSizes.length > 0) {
+        const totalChunkBytes = chunkSizes.reduce((sum, s) => sum + s.byteLength, 0);
+        console.log(`gnChunks (${chunkSizes.length})`.padEnd(16) + ` ${fmtBytes(totalChunkBytes).padStart(10)}  (gzip, total)`);
     }
     console.log();
     console.log(`total pack size:   ${fmtBytes(stats.totalByteLength)}`);

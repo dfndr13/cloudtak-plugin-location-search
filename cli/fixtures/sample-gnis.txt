@@ -1,0 +1,13 @@
+COUNTY_NAME|FEATURE_ID|FEATURE_NAME|STATE_ALPHA|FEATURE_CLASS|PRIM_LAT_DEC|PRIM_LONG_DEC
+Maricopa|100001|Bear Creek|AZ|Stream|33.4500|-112.0700
+Maricopa|100002|Bear Creek|AZ|Stream|33.4500|-112.0700
+Coconino|100003|Mount Elden|AZ|Summit|35.2400|-111.6100
+Yavapai|100004|Cañon City|AZ|Populated Place|34.5400|-112.4600
+Santa Cruz|100005|Peña Blanca Lake|AZ|Reservoir|31.4100|-111.0800
+Coconino|100006|Squaw Flat|AZ|Flat|36.1000|-110.5000
+Apache|100007|St. Michael's Church|AZ|Church|35.6600|-109.2300
+Coconino|100008|Wide Spot|AZ||36.0000|-110.9000
+Gila|100009||AZ|Stream|33.0000|-110.9000
+Gila|100010|Salt River|AZ|Stream||
+Coconino|100011|Grand Falls|AZ|Falls|35.3500|-111.2200
+Apache|100012|Window Rock|AZ|Summit|35.6800|-109.0500

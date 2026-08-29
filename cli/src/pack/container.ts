@@ -67,28 +67,100 @@ export function writePack(
     return assemble(finalManifest, sections);
 }
 
-function assemble(manifest: PackManifest, sections: readonly SectionInput[]): Buffer {
+/**
+ * Version-2 sibling of `writePack` — same two-pass offset-resolution trick (the manifest's own
+ * byte length affects the section offsets it lists, so it's built once to measure, then again for
+ * real), but for a `GazetteerManifest` instead. Kept separate from `writePack` rather than
+ * overloading its signature with an "extra fields" bag, so each manifest shape stays explicit and
+ * typed.
+ */
+export function writeGazetteerPack(
+    sections: readonly SectionInput[],
+    meta: { region: string; sourceName: string; recordCount: number; cellSizeDeg: number },
+): Buffer {
+    const buildManifest = (headerSize: number): GazetteerManifest => {
+        let cursor = headerSize;
+        const sectionMetas: PackSectionMeta[] = sections.map((s) => {
+            const sectionMeta: PackSectionMeta = {
+                id: s.id,
+                kind: s.kind,
+                byteOffset: cursor,
+                byteLength: s.bytes.byteLength,
+                compressed: s.compressed,
+                checksum: sha256(s.bytes),
+                ...(s.count !== undefined ? { count: s.count } : {}),
+            };
+            cursor += s.bytes.byteLength;
+            return sectionMeta;
+        });
+        return {
+            version: PACK_VERSION_GAZETTEER,
+            createdAt: new Date().toISOString(),
+            region: meta.region,
+            sourceName: meta.sourceName,
+            recordCount: meta.recordCount,
+            cellSizeDeg: meta.cellSizeDeg,
+            sections: sectionMetas,
+        };
+    };
+
+    const provisionalJson = JSON.stringify(buildManifest(0));
+    const headerSize = 4 + 4 + 4 + Buffer.byteLength(provisionalJson, "utf8");
+    const finalManifest = buildManifest(headerSize);
+    const finalJson = JSON.stringify(finalManifest);
+
+    if (Buffer.byteLength(finalJson, "utf8") !== Buffer.byteLength(provisionalJson, "utf8")) {
+        const headerSize2 = 4 + 4 + 4 + Buffer.byteLength(finalJson, "utf8");
+        return assemble(buildManifest(headerSize2), sections);
+    }
+
+    return assemble(finalManifest, sections);
+}
+
+function assemble(manifest: PackManifest | GazetteerManifest, sections: readonly SectionInput[]): Buffer {
     const manifestJson = Buffer.from(JSON.stringify(manifest), "utf8");
     const header = Buffer.alloc(4 + 4 + 4);
     header.write(PACK_MAGIC, 0, "ascii");
-    header.writeUInt32LE(PACK_VERSION, 4);
+    header.writeUInt32LE(manifest.version, 4);
     header.writeUInt32LE(manifestJson.byteLength, 8);
 
     return Buffer.concat([header, manifestJson, ...sections.map((s) => s.bytes)]);
 }
 
-export function readPackManifest(fileBuf: Buffer): PackManifest {
+/** Versions this container reader recognizes at all, across every pack "kind" — anything else is
+ *  refused outright. Each kind-specific reader below (`readPackManifest`/`readGazetteerManifest`)
+ *  additionally refuses the *other* kind's version, so a reader for one kind can never silently
+ *  misinterpret the other's manifest shape. */
+const KNOWN_VERSIONS = new Set<number>([PACK_VERSION, PACK_VERSION_GAZETTEER]);
+
+function readManifestRaw(fileBuf: Buffer): { version: number; json: Record<string, unknown> } {
     const magic = fileBuf.toString("ascii", 0, 4);
     if (magic !== PACK_MAGIC) {
         throw new Error(`not a pack file: bad magic ${JSON.stringify(magic)}`);
     }
     const version = fileBuf.readUInt32LE(4);
-    if (version !== PACK_VERSION) {
-        throw new Error(`unsupported pack version ${version}, expected ${PACK_VERSION}`);
+    if (!KNOWN_VERSIONS.has(version)) {
+        throw new Error(`unsupported pack version ${version}, expected one of ${[...KNOWN_VERSIONS].join(", ")}`);
     }
     const manifestLength = fileBuf.readUInt32LE(8);
     const manifestJson = fileBuf.toString("utf8", 12, 12 + manifestLength);
-    return JSON.parse(manifestJson) as PackManifest;
+    return { version, json: JSON.parse(manifestJson) as Record<string, unknown> };
+}
+
+export function readPackManifest(fileBuf: Buffer): PackManifest {
+    const { version, json } = readManifestRaw(fileBuf);
+    if (version !== PACK_VERSION) {
+        throw new Error(`expected an address pack (version ${PACK_VERSION}), got version ${version}`);
+    }
+    return json as unknown as PackManifest;
+}
+
+export function readGazetteerManifest(fileBuf: Buffer): GazetteerManifest {
+    const { version, json } = readManifestRaw(fileBuf);
+    if (version !== PACK_VERSION_GAZETTEER) {
+        throw new Error(`expected a gazetteer pack (version ${PACK_VERSION_GAZETTEER}), got version ${version}`);
+    }
+    return json as unknown as GazetteerManifest;
 }
 
 /**
@@ -105,7 +177,7 @@ export function readSection(fileBuf: Buffer, section: PackSectionMeta): Buffer {
     return Buffer.from(raw);
 }
 
-export function getSection(manifest: PackManifest, id: string): PackSectionMeta {
+export function getSection(manifest: PackManifest | GazetteerManifest, id: string): PackSectionMeta {
     const section = manifest.sections.find((s) => s.id === id);
     if (!section) throw new Error(`section not found: ${id}`);
     return section;

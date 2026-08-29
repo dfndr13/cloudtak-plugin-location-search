@@ -29,15 +29,23 @@ services:
   address-packs:
     image: halverneus/static-file-server:latest
     ports:
-      - "8081:8080"
+      - "8081:8080"   # HOST:CONTAINER — change the left side freely, see note below
     volumes:
       - ./data/address-packs:/web
     environment:
       CORS: "true"
 ```
 
+**Neither port number is fixed by this plugin.** `8081:8080` is Docker's `HOST:CONTAINER` port
+mapping — `8080` (right side) is just `halverneus/static-file-server`'s own internal default (that
+image's choice, overridable via its own `PORT` env var if you ever needed to), and `8081` (left
+side) is completely arbitrary. Change the left side to whatever host port is actually free in your
+stack — `9090:8080`, `8888:8080`, anything. The plugin itself has no awareness of a port at all;
+it just does an HTTP fetch to whatever URL you paste into the gear panel's "Load from URL" field.
+
 Drop `az-statewide.pack` (or whatever regions you need) into `./data/address-packs/`, and it's
-reachable at `http://<host>:8081/az-statewide.pack`.
+reachable at `http://<host>:<whatever host port you chose>/az-statewide.pack` — use that exact URL
+in the gear panel.
 
 ## The part that actually matters: CORS
 

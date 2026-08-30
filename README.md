@@ -65,7 +65,7 @@ file, loaded as its own dataset (steps 3-5 below are identical either way — th
 auto-detects which kind of `.pack` it's looking at, no separate control to pick).
 
 **Get the data**: download the state-level "Domestic Names" text export from USGS's
-[GNIS download page](https://www.usgs.gov/us-board-on-geographic-names/download-gnis-data) — a
+[GNIS download page](https://prd-tnm.s3.amazonaws.com/index.html?prefix=StagedProducts/GeographicNames/DomesticNames/) — a
 `|`-delimited text file with a header row, one row per named feature (the file the CLI expects is
 literally named e.g. `DomesticNames_AZ.txt`).
 

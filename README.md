@@ -1,13 +1,16 @@
 # cloudtak-plugin-address-search
 
-An offline-first address search bar for CloudTAK, built from [OpenAddresses](https://openaddresses.io)
-data. Search by typing, click a result to fly there, drop a marker (local or shared), or click the
-map to find the nearest address to a point — all without a network connection once the data is
-loaded. See [`docs/PLAN.md`](docs/PLAN.md) for the full architecture, and
-[`docs/PACK_FORMAT.md`](docs/PACK_FORMAT.md) for the byte-level `.pack` file spec.
+An offline-first search bar for CloudTAK, built from [OpenAddresses](https://openaddresses.io)
+data (street addresses) and, optionally, [USGS GNIS](https://www.usgs.gov/us-board-on-geographic-names/download-gnis-data)
+data (named places — mountains, streams, trailheads, populated places). Search by typing, click a
+result to fly there, drop a marker (local or shared), or click the map to find the nearest match to
+a point — all without a network connection once the data is loaded. See
+[`docs/PLAN.md`](docs/PLAN.md) for the full architecture, and
+[`docs/PACK_FORMAT.md`](docs/PACK_FORMAT.md) for the byte-level `.pack` file spec (both the address
+container and the gazetteer/place-name container).
 
-All 7 phases of the original plan are built and live-verified — see
-[Development history](#development-history) for what was checked at each phase. This section is
+All 7 phases of the original plan, plus geoname search (Phases 7-8), are built and live-verified —
+see [Development history](#development-history) for what was checked at each phase. This section is
 the actual "how do I get this running" guide.
 
 ## Setup, step by step
@@ -52,6 +55,45 @@ node src/index.ts build /path/to/county1.geojson /path/to/county2.geojson \
 That's the whole command. It prints a build report (address count, section sizes, timing) when
 done — for reference, a full Arizona statewide export (3.68M addresses) takes about 20 seconds and
 produces a 40 MB `.pack` file.
+
+### Optional: place-name (gazetteer) data, from USGS GNIS
+
+Everything above builds a *street-address* pack. The CLI has a second, independent command for
+*named places* — summits, streams, trailheads, populated places, and similar — sourced from USGS's
+Geographic Names Information System (GNIS) instead of OpenAddresses. It produces its own `.pack`
+file, loaded as its own dataset (steps 3-5 below are identical either way — the gear panel
+auto-detects which kind of `.pack` it's looking at, no separate control to pick).
+
+**Get the data**: download the state-level "Domestic Names" text export from USGS's
+[GNIS download page](https://www.usgs.gov/us-board-on-geographic-names/download-gnis-data) — a
+`|`-delimited text file with a header row, one row per named feature (the file the CLI expects is
+literally named e.g. `DomesticNames_AZ.txt`).
+
+**Build the pack**:
+
+```sh
+cd cli
+npm install
+node src/index.ts build-gazetteer /path/to/DomesticNames_AZ.txt \
+  --out az-places.pack \
+  --region "AZ" \
+  --source-name "USGS GNIS Domestic Names (AZ)"
+```
+
+- The first argument(s) are one or more GNIS "Domestic Names" export files.
+- `--out <path>` / `--region <label>` — same meaning as the address `build` command above.
+- `--source-name <name>` (optional, default `"USGS GNIS National File"`) — a free-text label
+  recorded in the pack, shown as part of the default dataset label if you don't set one yourself.
+- `--cell-size <degrees>` (optional, default `0.02` — larger than the address default, since named
+  places are far sparser than addresses) controls the reverse-lookup grid size.
+- `--classes <comma-list>` (optional) — GNIS carries dozens of feature classes; by default only a
+  field/SAR-relevant allowlist is kept (Summit, Ridge, Valley, Gap, Range, Stream, Lake, Reservoir,
+  Falls, Spring, Bay, Populated Place, Locale, Airport, Bridge, Dam, Church, School, Hospital,
+  Cemetery, Tower, Mine, Park). Pass `--classes all` to keep every class in the file instead, or
+  your own comma-separated list (case-insensitive) to customize it.
+
+For reference, a real Arizona statewide GNIS export (29,777 raw rows) took under a second to build
+and produced a 2.57 MB `.pack` file covering 26,705 places.
 
 ### 3. Install the plugin into CloudTAK
 
@@ -104,6 +146,8 @@ In CloudTAK, click the search icon in the map controls, then the gear icon. Eith
 `.pack` file directly, or paste the hosting URL from step 4 and click **Load**. Every other user
 does the same with the same URL — each browser keeps its own local copy (see
 [Architecture](#architecture) for why), so this is a one-time step per person, not per instance.
+This works identically for an address pack or a gazetteer pack — both show up as datasets you can
+toggle on/off, and a search merges results from every enabled one.
 
 **Optional: make it a one-click option for everyone else.** In that same gear panel, under
 "Default dataset (shared)", enter a label and the hosting URL and click **Save as default**. This
@@ -346,5 +390,39 @@ dataset-mutating action in `AddressSearchGear.vue`/`AddressSearchBar.vue` now ca
 
 93 tests pass at the repo root as of Phase 6 (up from the original 45); `vue-tsc`/`eslint`/
 `npm run build` all clean against the real, unstripped plugin location.
+
+**Phase 7 (geoname/place-name ingestion, CLI-only) — done, verified at real state scale.** A
+second, independent `build-gazetteer` CLI subcommand and pack "kind" (container version 2) for
+named places from USGS GNIS, sharing only the outer container framing with the address pack
+(magic/version/manifest/sections) — a wholly different manifest shape and section vocabulary
+(`gnNames`, `gnClasses`, `gnPlaces`, flat `gnChunk:<n>` records, `gnTrigrams`, `gnCellDir`/
+`gnCellLists`), reusing the address pack's generic low-level codecs (string tables, trigram
+postings, the cell-based reverse index) unmodified. Deliberately scoped CLI-only this phase, same
+staging the original plan used for addresses (build the format and tooling before any UI work).
+
+**A real bug found and fixed against real data**: the initial dedup key (name + class + county +
+state) was too loose — a real 29,777-row AZ GNIS export has, e.g., nine distinct "Government
+Spring"s in Yavapai County alone, tens of km apart, which a location-blind key silently collapsed
+into one. Fixed by rounding coordinates (~11m) into the key. Also found: the real file's header
+uses `state_name` ("Arizona") rather than the assumed `state_alpha` ("AZ") — the column resolver
+now tries both by name rather than assuming a fixed column. 50 CLI tests pass (up from 33),
+verified end-to-end against a real Arizona statewide GNIS export: 29,777 raw rows → 26,705 kept
+records, 2.57 MB pack, sub-second build time.
+
+**Phase 8 (browser: load and search gazetteer packs) — done and live-verified.** The browser
+reader/`GazetteerIndex`/worker/UI side of Phase 7's format — the plugin now reads a gazetteer
+`.pack` through the exact same gear-panel file/URL flow as an address pack, auto-detected from the
+pack's own version byte (no new UI control). A new `GazetteerIndex` (`lib/search/gazetteer-index.ts`)
+holds a gazetteer dataset **fully resident** rather than lazily chunk-caching like `SearchIndex` —
+a deliberate simplification justified by scale (a real state-level pack is tens of thousands of
+records, not the tens of millions an address `SearchIndex` is built for) — and reuses the address
+path's generic prefix/fuzzy/reverse-lookup primitives almost entirely unmodified. `SearchResult`
+gained optional `sourceKind`/`featureClass`/`county`/`state` fields (widened, not replaced, same
+approach Phase 5 used for `matchedVia: "reverse"`), and `DatasetRecord` became a discriminated
+union with a read-time backward-compat shim so datasets created before this phase (no `kind` field
+in storage at all) keep working with zero migration step. 103 tests pass at the repo root (up from
+93); `vue-tsc`/`eslint`/`npm run build` all clean against the real, unstripped plugin location;
+live-verified against the real Arizona gazetteer pack from Phase 7 — search, drop-marker, and
+crosshair reverse-lookup all correctly return/act on geoname hits merged alongside address results.
 
 </details>

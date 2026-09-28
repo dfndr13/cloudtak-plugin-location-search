@@ -20,6 +20,12 @@ export interface UploadProgress {
 export interface UploadOptions {
     label?: string;
     onProgress?: (progress: UploadProgress) => void;
+    /**
+     * When set, this dataset's enabled flag is exactly this value. When omitted, only the first
+     * dataset in an empty store starts enabled (decision #8). Bundled public packs pass `true`
+     * so every pack from the image is searched, not only the first.
+     */
+    enabled?: boolean;
 }
 
 interface ByteRangeReader {
@@ -81,7 +87,7 @@ async function finalizeDataset(
     opts: UploadOptions & { sourceUrl?: string },
 ): Promise<DatasetRecord> {
     const existing = await listDatasets();
-    const enabled = existing.length === 0; // decision #8: default is one enabled
+    const enabled = opts.enabled ?? existing.length === 0; // decision #8: default is one enabled
     const input =
         parsed.kind === "address"
             ? {

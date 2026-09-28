@@ -77,13 +77,26 @@
             class='address-search-bar__panel'
         >
             <div
-                v-if='datasets.length === 0 && defaultLoading'
+                v-if='bundledLoad.active'
+                class='address-search-bar__empty-row'
+            >
+                Loading {{ bundledLoad.file || 'bundled packs' }}…
+                {{ bundledLoad.sectionsDone }}/{{ bundledLoad.sectionsTotal }} sections
+            </div>
+            <div
+                v-if='bundledLoad.error'
+                class='address-search-bar__empty-row'
+            >
+                {{ bundledLoad.error }}
+            </div>
+            <div
+                v-if='datasets.length === 0 && !bundledLoad.active && defaultLoading'
                 class='address-search-bar__empty-row'
             >
                 Loading "{{ defaultPack?.label }}"… {{ defaultProgress.sectionsDone }}/{{ defaultProgress.sectionsTotal }} sections
             </div>
             <div
-                v-else-if='datasets.length === 0 && defaultPack'
+                v-else-if='datasets.length === 0 && !bundledLoad.active && defaultPack'
                 class='address-search-bar__empty-row'
                 role='button'
                 tabindex='0'
@@ -98,7 +111,7 @@
                 </div>
             </div>
             <div
-                v-else-if='datasets.length === 0'
+                v-else-if='datasets.length === 0 && !bundledLoad.active'
                 class='address-search-bar__empty-row'
                 role='button'
                 tabindex='0'
@@ -178,7 +191,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { IconCrosshair, IconDatabase, IconHelpCircle, IconMapPinPlus, IconSettings, IconX } from '@tabler/icons-vue';
 import type { MapMouseEvent } from 'maplibre-gl';
-import { api, close, pinia, workerClient } from '../lib/state.ts';
+import { api, bundledLoad, bundledRevision, close, pinia, workerClient } from '../lib/state.ts';
 import { gpsReference, isCoreDrawActive, readDefaultPackConfig, type DefaultPackConfig } from '../lib/core-bridge.ts';
 import { listDatasets, setEnabled } from '../lib/storage/dataset-store.ts';
 import { loadFromUrl, type UploadProgress } from '../lib/storage/upload.ts';
@@ -373,6 +386,10 @@ function openHelp(): void {
         height: 460,
     });
 }
+
+watch(bundledRevision, () => {
+    void refreshDatasets();
+});
 
 onMounted(() => {
     void refreshDatasets();

@@ -3,10 +3,11 @@
 **Required for any shared/production CloudTAK instance** — see the main
 [README's setup walkthrough](../README.md#4-host-the-pack-file-required-for-more-than-one-user)
 for why. Address data lives in each browser's own local IndexedDB, never on a server, so there is
-no way for one person's file-picker upload to reach anyone else. The gear panel's "Load from URL"
-field (`lib/storage/upload.ts`'s `loadFromUrl`) is the only path that lets everyone get the same
-data without you handing each person the `.pack` file directly — and that only works once
-something is actually serving it over HTTP.
+no way for one person's file-picker upload to reach anyone else. Two ways share the same bytes.
+Packs [baked into the image](#image-build-publicaddress-search) are loaded by the plugin on enable.
+Otherwise the gear panel's "Load from URL" field (`lib/storage/upload.ts`'s `loadFromUrl`) is how
+each person fetches a pack you host — and that only works once something is actually serving it
+over HTTP.
 
 ## Recommended: serve it directly from your own CloudTAK deployment
 
@@ -45,11 +46,38 @@ same origin as CloudTAK, so `Access-Control-Allow-Origin`/CSP's `connect-src` (b
 `'self'`) need no changes, and there's no mixed-content risk. Adding or replacing a `.pack` later
 is just another `scp` into that same host folder — no container restart, no rebuild, no redeploy.
 
-Two things this rules out, for the record: `api/web/plugins/<name>/` can't serve raw files at all
-(Vite bundles everything there as JS source). `api/web/public/` looks tempting since Vite copies it
-verbatim into `dist/` — but that copy happens **once, at Docker build time**; a file dropped into
-`public/` on an already-running container is never picked up, since nothing re-reads it after the
-image is built. `dist/` (via the bind-mount above) is the directory actually served at runtime.
+`api/web/plugins/<name>/` can't serve raw files at all (Vite bundles everything there as JS
+source). `api/web/public/` is copied into `dist/` **once, at image build time** — a file dropped
+into `public/` on an already-running container is never picked up. That build-time copy is the
+[baked-in packs](#image-build-publicaddress-search) path below. The bind-mount onto `dist/` is the
+path when you want to add or replace a pack without rebuilding. `dist/` is the directory nginx
+actually serves at runtime.
+
+## Image build: `public/address-search`
+
+Use this when the packs should ship inside the CloudTAK image, the same way the schedule plugin's
+JSON ships in `public/schedule/`. Users do not upload a file or paste a URL. The plugin fetches
+`/address-search/index.json` on enable and loads each listed pack into that browser's IndexedDB,
+skipping any URL it already stored.
+
+```sh
+mkdir -p ~/CloudTAK/api/web/public/address-search
+cp az-statewide.pack az-places.pack ~/CloudTAK/api/web/public/address-search/
+chmod 755 ~/CloudTAK/api/web/public/address-search
+chmod 644 ~/CloudTAK/api/web/public/address-search/*.pack
+
+# from the address-search plugin repo
+node scripts/write-public-pack-index.mjs
+```
+
+Then rebuild CloudTAK so Vite copies `public/address-search/` into `dist/`. Run the script again
+before any rebuild that changes which packs are in that directory. It writes `index.json` with the
+names of files whose header is pack magic `CTAS` and version 1 or 2. Nginx will not list the
+directory, so the index is how the plugin finds "any" pack without a hardcoded filename.
+
+The default web root is `~/CloudTAK/api/web` (`--web` or `CLOUDTAK_WEB` override it). A missing
+index leaves the plugin on its usual empty state. Updating packs later without a rebuild is the
+volume mount above, not this directory.
 
 ## Alternative: a separate static-file-server container
 

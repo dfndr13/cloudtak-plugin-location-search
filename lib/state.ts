@@ -19,6 +19,26 @@ export const api = shallowRef<PluginAPI | null>(null);
 export const expanded = ref(false);
 export const workerClient = shallowRef<SearchWorkerClient | null>(null);
 
+export interface BundledLoadStatus {
+    active: boolean;
+    file: string;
+    sectionsDone: number;
+    sectionsTotal: number;
+    error: string;
+}
+
+/** Progress for packs loaded from `/address-search/` on enable. The dataset menu reads this. */
+export const bundledLoad = ref<BundledLoadStatus>({
+    active: false,
+    file: "",
+    sectionsDone: 0,
+    sectionsTotal: 0,
+    error: "",
+});
+
+/** Bumped after each bundled pack lands so an open dataset menu refreshes its list. */
+export const bundledRevision = ref(0);
+
 export function open(): void {
     expanded.value = true;
 }

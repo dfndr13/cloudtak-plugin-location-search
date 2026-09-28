@@ -60,6 +60,13 @@ describe("loadFromFile", () => {
         expect((await listDatasets()).filter((d) => d.enabled)).toHaveLength(1);
     });
 
+    it("enables a later dataset when enabled is set explicitly", async () => {
+        await loadFromFile(new File([bp(pack)], "a.pack"));
+        const second = await loadFromFile(new File([bp(pack)], "b.pack"), { enabled: true });
+        expect(second.enabled).toBe(true);
+        expect((await listDatasets()).filter((d) => d.enabled)).toHaveLength(2);
+    });
+
     it("rejects a file with a corrupted section checksum", async () => {
         const corrupted = new Uint8Array(pack);
         // Flip a byte inside the first (non-manifest) section's data.

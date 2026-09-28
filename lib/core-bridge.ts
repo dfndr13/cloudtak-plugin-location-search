@@ -13,11 +13,18 @@
 import type { Pinia } from "pinia";
 import { useMapStore } from "../../../src/stores/map.ts";
 import KV from "../../../src/base/kv.ts";
+import { stdurl } from "../../../src/std.ts";
 import type { GeoPoint } from "./search/types.ts";
 
 /** The cross-plugin contract's namespaced `db.kv` key (PLAN.md §6) — kept here rather than in
  *  lib/manifest-sync.ts since it's the literal string passed to a core import. */
 export const MANIFEST_KV_KEY = "addresssearch:manifest";
+
+/** Absolute URL for a same-origin path. Same `stdurl` helper the schedule plugin uses, so a
+ *  bundled pack's stored `sourceUrl` matches the URL the next enable() will look up. */
+export function absolutePackUrl(path: string): string {
+    return stdurl(path).href;
+}
 
 /** Core's own contact/channel/mission share dialog — re-exported here rather than imported
  *  directly from a component, per PLAN.md §9.1's rule that every deep core reach (including a

@@ -47,9 +47,11 @@
             Both options below load data into <strong>this browser only</strong> — neither one uploads or shares
             anything. Works for either kind of <code>.pack</code> file this project's CLI can build — street
             addresses (from OpenAddresses) or named places like mountains and trails (from USGS GNIS) — the
-            file/URL is auto-detected, there's no separate "type" to pick. For other people to get the same data,
-            host the <code>.pack</code> file somewhere reachable (see <code>docs/HOSTING.md</code>) and have each
-            person use "Load from URL" with that address.
+            file/URL is auto-detected, there's no separate "type" to pick. Packs placed in
+            <code>CloudTAK/api/web/public/address-search</code>, listed by
+            <code>node scripts/write-public-pack-index.mjs</code>, and included in a CloudTAK rebuild
+            load automatically for every user. Otherwise host the <code>.pack</code> somewhere reachable
+            (see <code>docs/HOSTING.md</code>) and have each person use "Load from URL".
         </p>
         <label class='address-search-gear__field-label'>From a file (this device only)</label>
         <div class='address-search-gear__add-row'>

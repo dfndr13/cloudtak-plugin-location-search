@@ -8,15 +8,59 @@ import type { PluginAPI, PluginInstance } from '../../plugin.ts';
 import * as state from './lib/state.ts';
 import { SearchWorkerClient } from './lib/worker/worker-client.ts';
 import { syncManifestKv } from './lib/manifest-sync.ts';
-import { deleteManifestKv } from './lib/core-bridge.ts';
+import { absolutePackUrl, deleteManifestKv } from './lib/core-bridge.ts';
+import { syncBundledPacks } from './lib/storage/bundled-packs.ts';
 import AddressSearchToggle from './components/AddressSearchToggle.vue';
 import type { SearchOptions, SearchResult } from './lib/search/types.ts';
+
+/** Invalidates an in-flight bundled-pack sync when the plugin is disabled mid-download. */
+let bundledSeq = 0;
 
 const BOTTOM_BAR_KEY = 'address-search';
 /** PLAN.md §6's "namespaced id" for the runtime lookup API — same naming style as the `db.kv`
  *  manifest key (lib/core-bridge.ts's `MANIFEST_KV_KEY`), just on `window` instead of `db.kv`,
  *  since a live callable can't be stored as a `db.kv` string. See docs/cross-plugin-api.d.ts. */
 const WINDOW_API_KEY = 'addresssearch:api';
+
+const idleBundledLoad = { active: false, file: '', sectionsDone: 0, sectionsTotal: 0, error: '' };
+
+/** Fetch /address-search/index.json and load any pack this browser does not already have. */
+async function loadBundledPacks(): Promise<void> {
+    const seq = ++bundledSeq;
+    try {
+        const result = await syncBundledPacks({
+            resolveUrl: (packPath) => absolutePackUrl(packPath),
+            onProgress: (progress) => {
+                if (seq !== bundledSeq) return;
+                state.bundledLoad.value = {
+                    active: true,
+                    file: progress.file,
+                    sectionsDone: progress.sectionsDone,
+                    sectionsTotal: progress.sectionsTotal,
+                    error: '',
+                };
+            },
+            onLoaded: async () => {
+                if (seq !== bundledSeq) return;
+                state.bundledRevision.value += 1;
+                await state.workerClient.value?.refresh();
+                void syncManifestKv();
+            },
+        });
+        if (seq !== bundledSeq) return;
+        state.bundledLoad.value = {
+            ...idleBundledLoad,
+            error: result.failed.map((failure) => failure.message).join('; '),
+        };
+    } catch (err) {
+        console.error('[address-search] bundled pack sync failed', err);
+        if (seq !== bundledSeq) return;
+        state.bundledLoad.value = {
+            ...idleBundledLoad,
+            error: err instanceof Error ? err.message : String(err),
+        };
+    }
+}
 
 /** Trims lib/search/types.ts's internal SearchResult down to the public contract (docs/
  *  cross-plugin-api.d.ts's AddressSearchResult) — explicitly listing fields rather than
@@ -80,9 +124,12 @@ export default class AddressSearchPlugin implements PluginInstance {
             },
         };
         void syncManifestKv();
+        void loadBundledPacks();
     }
 
     async disable(): Promise<void> {
+        bundledSeq += 1;
+        state.bundledLoad.value = { ...idleBundledLoad };
         this.api.bottomBar.remove(BOTTOM_BAR_KEY);
 
         delete (window as unknown as Record<string, unknown>)[WINDOW_API_KEY];

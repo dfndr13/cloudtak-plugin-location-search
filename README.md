@@ -19,7 +19,9 @@ There are four things to do, in order: get address data, turn it into a `.pack` 
 plugin into CloudTAK, and — **if more than one person needs to use it** — host that `.pack` file
 somewhere everyone's browser can reach it. Skipping the last step is fine for a single-user/dev
 setup, but on a shared/production CloudTAK instance it's not optional: without it, every other user
-who opens the search bar sees "no datasets loaded" and has no way to fix that themselves.
+who opens the search bar sees "no datasets loaded" and has no way to fix that themselves. To ship
+the data inside the CloudTAK image so nobody has to pick a file or paste a URL, use
+[baked-in packs](#baked-in-packs) instead of steps 4 and 5.
 
 ### 1. Get OpenAddresses data
 
@@ -157,13 +159,46 @@ know or paste the URL themselves — one click, no typing. There's no admin/perm
 (the plugin API doesn't expose one), so anyone with the gear panel open can set or change it —
 worth keeping in mind since it affects everyone on the instance, not just the person setting it.
 
+### Baked-in packs
+
+Same idea as the schedule plugin's calendar file: put the data in CloudTAK's `public/` directory
+and rebuild, and the plugin loads it. Users do not pick a file or paste a URL. Each browser still
+keeps its own IndexedDB copy; the plugin starts that download on enable and skips any pack it
+already stored.
+
+```sh
+mkdir -p ~/CloudTAK/api/web/public/address-search
+cp az-statewide.pack az-places.pack ~/CloudTAK/api/web/public/address-search/
+chmod 755 ~/CloudTAK/api/web/public/address-search
+chmod 644 ~/CloudTAK/api/web/public/address-search/*.pack
+
+# from this repo — writes public/address-search/index.json
+node scripts/write-public-pack-index.mjs
+```
+
+Then rebuild CloudTAK (`npm run build` in `api/web`, or `docker compose build`) so Vite copies
+`public/` into `dist/`. Re-run the script before every rebuild that adds, removes, or replaces a
+pack. The script keeps a file only when its first 8 bytes are pack magic `CTAS` and version 1
+(addresses) or 2 (places). Anything else is skipped with a warning.
+
+The default directory is `~/CloudTAK/api/web`. Pass `--web <api/web>` or set `CLOUDTAK_WEB` when
+the checkout lives somewhere else. If this repo is cloned at `api/web/plugins/address-search`,
+that parent web root is used automatically.
+
+A missing `index.json` (or a 404) leaves the search bar on the usual empty state. Deleting a
+baked-in dataset in the gear panel loads it again the next time the plugin is enabled.
+
+The volume mount in [step 4](#4-host-the-pack-file-required-for-more-than-one-user) is still the
+way to change packs without rebuilding. See [`docs/HOSTING.md`](docs/HOSTING.md).
+
 ## Architecture
 
 Address data lives entirely in **the browser's own IndexedDB**, not on any CloudTAK server —
-that's what makes search instant and fully offline once loaded, and it's why "host the `.pack`
-file" (step 4) and "each user loads it once" (step 5) are both necessary: there is no
-server-side sync of this data between users, by design (see `docs/PLAN.md` §5 for the full
-reasoning — mainly avoiding a memory footprint large enough for iOS Safari to evict the tab).
+that's what makes search instant and fully offline once loaded. There is no server-side sync of
+this data between users, by design (see `docs/PLAN.md` §5 for the full reasoning — mainly avoiding
+a memory footprint large enough for iOS Safari to evict the tab). Hosting a `.pack` (step 4) and
+each browser downloading it once (step 5, or [baked-in packs](#baked-in-packs) doing that download
+automatically) are both still required.
 
 | Path | Purpose |
 |---|---|
@@ -175,7 +210,8 @@ reasoning — mainly avoiding a memory footprint large enough for iOS Safari to 
 | `lib/normalize.ts` | Street/place text normalization — shared between the CLI (ingest) and the search core (query parsing), so they can never disagree |
 | `lib/pack/` | Portable (Node + browser), dependency-free pack reader: string tables, groups, trigrams, cells, chunks, the container/manifest reader, and `PackSource` |
 | `lib/search/` | Forward search (query parsing, prefix/fuzzy matching, ranking, number resolution) and reverse lookup (`reverse-lookup.ts`), tied together by the `SearchIndex` class |
-| `lib/storage/` | This plugin's own IndexedDB (raw API, no Dexie): dataset CRUD, `IndexedDbPackSource`, both upload paths |
+| `lib/storage/` | This plugin's own IndexedDB (raw API, no Dexie): dataset CRUD, `IndexedDbPackSource`, both upload paths, and baked-in pack sync (`bundled-packs.ts`) |
+| `scripts/write-public-pack-index.mjs` | Writes `public/address-search/index.json` before a CloudTAK rebuild |
 | `lib/worker/` | The dedicated search Worker, its hand-rolled `postMessage` protocol, and the main-thread client |
 | `lib/manifest.ts` / `lib/manifest-sync.ts` | The cross-plugin `db.kv` manifest — pure JSON-shape builder vs. the actual CloudTAK write |
 | `lib/core-bridge.ts` / `lib/state.ts` | CloudTAK-glue (deep imports for GPS, drop-marker, core-draw mutual exclusion, `db.kv`) and shared module state; excluded from this repo's own tsconfig since they only resolve inside a real CloudTAK checkout |

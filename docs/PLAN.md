@@ -232,13 +232,14 @@ is gitignored — so the symlink never appears in CloudTAK's git status. Bundlin
 **There is no storage API and no search/geocode hook** — which is why §6 defines its own contract.
 
 ### 8.3 Button placement
-There is no plugin hook on the left map control stack. `MeasureToggle.vue` solves this by
-registering through `bottomBar.add()` while rendering `<Teleport to='body'>`, positioning itself
-at `getBoundingClientRect().bottom + 8` of `.cloudtak-ctrl-group`, reusing core's
-`cloudtak-ctrl-group cloudtak-panel cloudtak-ctrl-btn` classes at `z-index: 4`, and tracking the
-stack with a `ResizeObserver` plus a `MutationObserver`. When core hides the stack (non-Default
-mode) the query returns null and the button hides itself. **Copy this pattern**, with the
-collision fix in §10.
+There is no plugin hook on the left map control stack. A bottom-bar registration opens PluginPane
+as an empty 50px strip, because the button is teleported out of that slot. The toggle is mounted
+on a hidden host (`lib/mount-toggle.ts` / `lib/toggle-host.ts`) and any stale `address-search`
+key is removed on enable and disable. The button is positioned at
+`getBoundingClientRect().bottom + 8` of `.cloudtak-ctrl-group` and tracks the stack with a
+`ResizeObserver` plus a `MutationObserver`. The shell does not use the `cloudtak-ctrl-group`
+class — that class is how Measure finds core's stack. When core hides the stack (non-Default
+mode) the query returns null and the button hides itself. See the collision fix in §10.
 
 ### 8.4 `db.kv` — string values only
 `api/web/src/database.ts:136` defines `DBKV { key: string; value: string }`; `:293` registers

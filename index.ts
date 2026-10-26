@@ -10,13 +10,13 @@ import { SearchWorkerClient } from './lib/worker/worker-client.ts';
 import { syncManifestKv } from './lib/manifest-sync.ts';
 import { absolutePackUrl, deleteManifestKv } from './lib/core-bridge.ts';
 import { syncBundledPacks } from './lib/storage/bundled-packs.ts';
-import AddressSearchToggle from './components/AddressSearchToggle.vue';
+import { mountAddressSearchToggle, unmountAddressSearchToggle } from './lib/mount-toggle.ts';
+import { attachChrome, detachChrome } from './lib/toggle-host.ts';
 import type { SearchOptions, SearchResult } from './lib/search/types.ts';
 
 /** Invalidates an in-flight bundled-pack sync when the plugin is disabled mid-download. */
 let bundledSeq = 0;
 
-const BOTTOM_BAR_KEY = 'address-search';
 /** PLAN.md §6's "namespaced id" for the runtime lookup API — same naming style as the `db.kv`
  *  manifest key (lib/core-bridge.ts's `MANIFEST_KV_KEY`), just on `window` instead of `db.kv`,
  *  since a live callable can't be stored as a `db.kv` string. See docs/cross-plugin-api.d.ts. */
@@ -109,10 +109,16 @@ export default class AddressSearchPlugin implements PluginInstance {
             return;
         }
 
-        this.api.bottomBar.add({ key: BOTTOM_BAR_KEY, component: AddressSearchToggle });
+        // Not a bottom-bar item: PluginPane stays 50px tall for every
+        // registered key, and the search button is teleported out of that slot.
+        // Mount only after the worker exists; a worker failure returns above.
+        attachChrome({
+            bottomBar: this.api.bottomBar,
+            mountToggle: mountAddressSearchToggle,
+        });
 
         // PLAN.md §6: publish the cross-plugin contract. Registered here (not module scope) so
-        // it only exists while the plugin is actually enabled, matching bottomBar/worker lifecycle.
+        // it only exists while the plugin is actually enabled, matching the toggle/worker lifecycle.
         (window as unknown as Record<string, unknown>)[WINDOW_API_KEY] = {
             search: async (query: string, opts?: SearchOptions) => {
                 const results = (await state.workerClient.value?.search(query, opts)) ?? [];
@@ -130,7 +136,10 @@ export default class AddressSearchPlugin implements PluginInstance {
     async disable(): Promise<void> {
         bundledSeq += 1;
         state.bundledLoad.value = { ...idleBundledLoad };
-        this.api.bottomBar.remove(BOTTOM_BAR_KEY);
+        detachChrome({
+            bottomBar: this.api.bottomBar,
+            unmountToggle: unmountAddressSearchToggle,
+        });
 
         delete (window as unknown as Record<string, unknown>)[WINDOW_API_KEY];
         void deleteManifestKv();

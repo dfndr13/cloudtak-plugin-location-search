@@ -1,6 +1,6 @@
 <template>
     <!--
-        Registered through api.bottomBar.add(). Teleported to <body> and anchored beneath core's
+        Mounted by the plugin on a hidden host (not the bottom bar). Teleported to <body> and anchored beneath core's
         left-margin control stack, the same spot measure's ruler button anchors to (there's no
         dedicated plugin hook for that stack) — see docs/PLAN.md §8.3.
 

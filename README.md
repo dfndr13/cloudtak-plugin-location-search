@@ -238,19 +238,17 @@ npm install && npm test && npx tsc --noEmit
 cd cli && npm install && npm test && npx tsc --noEmit
 ```
 
-Root `tsc` deliberately excludes `lib/core-bridge.ts`, `lib/state.ts`, and `lib/manifest-sync.ts`
-(see `tsconfig.json`) — they only resolve once this repo is actually inside a CloudTAK checkout, so
-they're verified the same way the `.vue` components are, against the real thing:
+Root `tsc` deliberately excludes `lib/core-bridge.ts`, `lib/state.ts`, `lib/manifest-sync.ts`, and
+`lib/mount-toggle.ts` (see `tsconfig.json`) — they only resolve once this repo is actually inside a
+CloudTAK checkout, so they're verified the same way the `.vue` components are, against the real thing:
 
 ```sh
 # Check against the REAL plugin location — not a stripped copy. A stripped copy (removing cli/,
 # test/, bench/ first) can hide real problems the actual `git clone`-based Docker build would hit,
 # since that clones the whole repo unstripped — see the Phase 6 note in Development history.
-ln -sfn ~/dev/cloudtak-plugin-address-search ~/CloudTAK/api/web/plugins/address-search
-cd ~/CloudTAK/api/web
-npx vue-tsc --noEmit
-npx eslint --config eslint.config.js ./plugins/address-search/
-npm run build   # confirms the worker bundle + full app build still succeed
+ln -sfn ~/dev/cloudtak-plugin-address-search ~/CloudTAK/app/plugins/address-search
+cd ~/CloudTAK/app
+bash ~/dev/cloudtak-plugin-address-search/scripts/check-like-docker.sh ~/CloudTAK/app
 ```
 
 One Node quirk worth knowing: Node 23.6+ runs `.ts` files directly (no build step needed for either

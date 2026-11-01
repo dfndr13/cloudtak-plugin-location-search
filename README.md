@@ -97,18 +97,51 @@ node src/index.ts build-gazetteer /path/to/DomesticNames_AZ.txt \
 For reference, a real Arizona statewide GNIS export (29,777 raw rows) took under a second to build
 and produced a 2.57 MB `.pack` file covering 26,705 places.
 
+### Optional: your own named polygons (e.g. subdivision lots), from GeoJSON
+
+`build-geojson-places` turns a GeoJSON FeatureCollection of polygons — a parcel layer, for
+instance — into the same kind of place-name `.pack` as GNIS, one searchable name per polygon,
+located at the polygon's centroid (an L-shaped lot whose centroid falls outside it is moved to a
+point inside, so search never lands on a neighbor's lot). Selecting the result pans the map there.
+
+```sh
+cd cli
+node src/index.ts build-geojson-places /path/to/WWR_Parcels.geojson \
+  --out wwr-lots.pack \
+  --region "WWR" \
+  --name "WWR {name}" \
+  --class "Lot" \
+  --county "APN {APN}" \
+  --state "AZ" \
+  --where OWNERORMAN=Private \
+  --source-name "WWR parcels"
+```
+
+- `--name <template>` (required) — the searchable name. `{PROPERTY}` is replaced with that
+  feature's property, so `"WWR {name}"` makes a lot whose `name` is `405` searchable as
+  "WWR 405". A feature missing any property the template uses is skipped.
+- `--class`, `--county`, `--state` (optional templates) — shown after the name in results:
+  "WWR 405 — Lot, APN 70071013, AZ". `--county "APN {APN}"` is worth keeping when several
+  parcels share a lot number (split parcels): searching that number lists each one by APN.
+- `--where KEY=VALUE` (optional, repeatable) — keep only features whose property matches exactly.
+- `--source-name`, `--cell-size` — same as `build-gazetteer`.
+
+Search is case-insensitive, and a mistyped prefix still finds the lot by fuzzy match — "www 405"
+or "WWR405" both rank WWR 405 first. For reference, the 1,169-lot WWR parcel layer builds in about
+10 ms into a 97 KB pack. Load it as its own dataset (steps 3-5), alongside any address or GNIS pack.
+
 ### 3. Install the plugin into CloudTAK
 
 **Local dev** (symlink — instant reload, never appears in CloudTAK's git status since `plugins/`
 is gitignored):
 
 ```sh
-ln -sfn ~/dev/cloudtak-plugin-address-search ~/CloudTAK/api/web/plugins/address-search
-cd ~/CloudTAK/api/web && npm run serve
+ln -sfn ~/dev/cloudtak-plugin-address-search ~/CloudTAK/app/plugins/address-search
+cd ~/CloudTAK/app && npm run serve
 ```
 
 **Production (Docker)**: CloudTAK's own `api/Dockerfile` takes a `WEB_PLUGINS` build argument — a
-comma/space-separated list of git URLs — and clones each one into `api/web/plugins/` at build
+comma/space-separated list of git URLs — and clones each one into `app/plugins/` at build
 time (see `api/bin/plugin.ts`). Push this repo to a git remote your build environment can reach,
 then add its URL to `WEB_PLUGINS` wherever that's set for your deployment (a `docker-compose.yml`
 `build.args` block, or a `--build-arg` flag), and rebuild the `api` image. The Dockerfile runs
@@ -132,7 +165,7 @@ for future data updates. Add a volume to the existing `api` service:
 services:
   api:
     volumes:
-      - ./data/address-packs:/home/etl/api/web/dist/address-packs
+      - ./data/address-packs:/home/etl/app/dist/address-packs
 ```
 
 Restart the `api` service once to pick up the mount, then `scp` (or otherwise copy) `.pack` files
@@ -167,22 +200,22 @@ keeps its own IndexedDB copy; the plugin starts that download on enable and skip
 already stored.
 
 ```sh
-mkdir -p ~/CloudTAK/api/web/public/address-search
-cp az-statewide.pack az-places.pack ~/CloudTAK/api/web/public/address-search/
-chmod 755 ~/CloudTAK/api/web/public/address-search
-chmod 644 ~/CloudTAK/api/web/public/address-search/*.pack
+mkdir -p ~/CloudTAK/app/public/address-search
+cp az-statewide.pack az-places.pack ~/CloudTAK/app/public/address-search/
+chmod 755 ~/CloudTAK/app/public/address-search
+chmod 644 ~/CloudTAK/app/public/address-search/*.pack
 
 # from this repo — writes public/address-search/index.json
 node scripts/write-public-pack-index.mjs
 ```
 
-Then rebuild CloudTAK (`npm run build` in `api/web`, or `docker compose build`) so Vite copies
+Then rebuild CloudTAK (`npm run build` in `app`, or `docker compose build`) so Vite copies
 `public/` into `dist/`. Re-run the script before every rebuild that adds, removes, or replaces a
 pack. The script keeps a file only when its first 8 bytes are pack magic `CTAS` and version 1
 (addresses) or 2 (places). Anything else is skipped with a warning.
 
-The default directory is `~/CloudTAK/api/web`. Pass `--web <api/web>` or set `CLOUDTAK_WEB` when
-the checkout lives somewhere else. If this repo is cloned at `api/web/plugins/address-search`,
+The default directory is `~/CloudTAK/app`. Pass `--web <app>` or set `CLOUDTAK_WEB` when
+the checkout lives somewhere else. If this repo is cloned at `app/plugins/address-search`,
 that parent web root is used automatically.
 
 A missing `index.json` (or a 404) leaves the search bar on the usual empty state. Deleting a
@@ -458,5 +491,22 @@ in storage at all) keep working with zero migration step. 103 tests pass at the 
 93); `vue-tsc`/`eslint`/`npm run build` all clean against the real, unstripped plugin location;
 live-verified against the real Arizona gazetteer pack from Phase 7 — search, drop-marker, and
 crosshair reverse-lookup all correctly return/act on geoname hits merged alongside address results.
+
+**Phase 9 (named polygons from GeoJSON, CLI-only) — done.** A `build-geojson-places` subcommand
+(`cli/src/ingest/geojson-places.ts`) feeds polygon centroids into the existing gazetteer builder
+through a new `source` option, so it produces a standard version 2 gazetteer pack — no format or
+browser changes. Names, classes and the county/state slots are `{PROPERTY}` templates; `--where`
+filters by property. Centroids are area-weighted across MultiPolygon parts with holes subtracted,
+falling back to an interior point when the centroid lands outside the shape. Built for the WWR
+subdivision parcel layer: 1,169 lots → 97 KB pack, "WWR 405" exact, "www 405" fuzzy to the same
+lot. Includes a test fixture with square, L-shaped, multipart, filtered, unnamed and non-polygon
+features, plus a browser-index test over a pack built from it.
+
+**CloudTAK layout change (2026-11-01).** Upstream CloudTAK moved its web app from `api/web/` to
+`app/` — `public/`, `plugins/`, `vite.config.ts` and the container's `dist/`
+(`/home/etl/app/dist/`) all moved with it. The setup steps above, `docs/HOSTING.md`, the gear
+panel copy, and `scripts/write-public-pack-index.mjs`'s default web root (now `~/CloudTAK/app`)
+were updated to match. Earlier entries in this history still say `api/web/`, which was correct
+when they were written.
 
 </details>

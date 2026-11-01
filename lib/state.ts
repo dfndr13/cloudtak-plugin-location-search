@@ -5,7 +5,7 @@
  * prop-plumbing through the core component tree.
  *
  * Not covered by this repo's own tsconfig.json (see its `exclude`) — it imports `vue`/`pinia`,
- * which resolve against api/web's own node_modules at bundle time and aren't devDependencies
+ * which resolve against app's own node_modules at bundle time and aren't devDependencies
  * here, matching the measure plugin's zero-runtime-deps convention. Verified only via the
  * copy-into-CloudTAK + vue-tsc step.
  */

@@ -48,7 +48,7 @@
             anything. Works for either kind of <code>.pack</code> file this project's CLI can build — street
             addresses (from OpenAddresses) or named places like mountains and trails (from USGS GNIS) — the
             file/URL is auto-detected, there's no separate "type" to pick. Packs placed in
-            <code>CloudTAK/api/web/public/address-search</code>, listed by
+            <code>CloudTAK/app/public/address-search</code>, listed by
             <code>node scripts/write-public-pack-index.mjs</code>, and included in a CloudTAK rebuild
             load automatically for every user. Otherwise host the <code>.pack</code> somewhere reachable
             (see <code>docs/HOSTING.md</code>) and have each person use "Load from URL".

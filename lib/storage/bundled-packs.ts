@@ -1,5 +1,5 @@
 /**
- * Packs baked into a CloudTAK image via api/web/public/address-search/. Vite copies that
+ * Packs baked into a CloudTAK image via app/public/address-search/. Vite copies that
  * directory into dist/ at build time; this module fetches the index the operator script writes
  * and loads any pack this browser does not already have. No CloudTAK imports — callers pass
  * resolveUrl (production uses stdurl via lib/core-bridge.ts).

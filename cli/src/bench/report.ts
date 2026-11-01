@@ -46,8 +46,8 @@ export function printReport(stats: BuildStats): void {
 export function printGazetteerReport(stats: GazetteerBuildStats): void {
     console.log("=== Gazetteer pack build report ===");
     console.log(`raw features:      ${stats.rawFeatureCount}`);
-    console.log(`filtered (class):  ${stats.filteredCount}`);
-    console.log(`dropped (blank name/class/coords): ${stats.droppedCount}`);
+    console.log(`filtered:          ${stats.filteredCount}`);
+    console.log(`dropped (blank name/bad geometry): ${stats.droppedCount}`);
     console.log(`deduped:           ${stats.dedupedCount}`);
     console.log(`records:           ${stats.recordCount}`);
     console.log(`distinct names:    ${stats.nameCount}`);

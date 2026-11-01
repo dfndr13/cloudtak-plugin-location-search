@@ -9,7 +9,7 @@
  * `new URL('./search-worker.ts', import.meta.url)`. That runtime form was tried first and broke
  * in the local symlinked-plugin dev loop: Vite's dev server only relaxes its filesystem-access
  * check for paths discovered through its own module-resolution pipeline (which is how every
- * other import in this plugin correctly reaches outside api/web/), and a URL computed at runtime
+ * other import in this plugin correctly reaches outside app/), and a URL computed at runtime
  * in the browser never goes through that pipeline — it hit Vite's raw `fs.allow` check directly
  * and was rejected as "outside of Vite serving allow list." The static `?worker&url` import
  * resolves at build/serve time through the normal pipeline instead, exactly like every other

@@ -7,8 +7,13 @@ import { buildTrigramPostings, encodeTrigramPostings } from "./trigrams.ts";
 import { buildCellIndex, encodeCellDir, encodeCellLists, type CellEntry } from "./cells.ts";
 import { writeGazetteerPack, type SectionInput } from "./container.ts";
 
+/** One ingested row from any gazetteer source — `ParsedGnisLine` and `ParsedGeojsonPlace` both fit. */
+export type GazetteerIngestLine = { ok: true; record: NormalizedGazetteerRecord } | { ok: false; reason: string };
+
 export interface GazetteerBuildOptions {
     inputFiles: readonly string[];
+    /** Rows to build from instead of parsing `inputFiles` as GNIS (e.g. `parseGeojsonPlaceFiles`). */
+    source?: AsyncIterable<GazetteerIngestLine>;
     region: string;
     sourceName: string;
     cellSizeDeg?: number;
@@ -70,10 +75,11 @@ export async function buildGazetteerPack(opts: GazetteerBuildOptions): Promise<G
     let droppedCount = 0;
     let dedupedCount = 0;
 
-    for await (const line of parseGnisFiles(opts.inputFiles, { classes: opts.classes })) {
+    const source = opts.source ?? parseGnisFiles(opts.inputFiles, { classes: opts.classes });
+    for await (const line of source) {
         rawFeatureCount++;
         if (!line.ok) {
-            if (line.reason === "filtered-class") filteredCount++;
+            if (line.reason === "filtered-class" || line.reason === "filtered") filteredCount++;
             else droppedCount++;
             continue;
         }

@@ -33,7 +33,7 @@ export function absolutePackUrl(path: string): string {
 export { default as ShareModal } from "../../../src/components/CloudTAK/util/Share.vue";
 
 /** Default point type when core exposes none — same fallback core itself uses
- *  (`api/web/src/stores/map.ts:220`). */
+ *  (`app/src/stores/map.ts:220`). */
 const DEFAULT_POINT_TYPE = "u-d-p";
 
 enum LocationStateMirror {
@@ -72,7 +72,7 @@ export function gpsReference(pinia: Pinia): GeoPoint | undefined {
  * The user's own default point type preference (Settings -> profile `tak_type`, surfaced on the
  * map store as `defaultPointType`), so the Phase 4 drop-marker prompt starts from the same default
  * CloudTAK itself already uses rather than a plugin-invented one. Degrades to `'u-d-p'` (core's
- * own fallback, `api/web/src/stores/map.ts:220`) if the field isn't there.
+ * own fallback, `app/src/stores/map.ts:220`) if the field isn't there.
  */
 export function defaultPointType(pinia: Pinia): string {
     try {
@@ -101,7 +101,7 @@ export type DroppedFeature = Record<string, unknown>;
 
 /**
  * Writes a dropped address-search result as a real CoT point feature. Mirrors the exact shape
- * core's own "Draw Point" tool produces (`api/web/src/stores/modules/draw.ts:401-440`) — same
+ * core's own "Draw Point" tool produces (`app/src/stores/modules/draw.ts:401-440`) — same
  * `how`/`stale`/`marker-*` properties — so the result is indistinguishable from a core-drawn point
  * for icon rendering, Mission sync, and everything else downstream, rather than inventing a new
  * shape. Returns the written feature (so callers can hand it straight to `ShareModal`), or
@@ -161,7 +161,7 @@ export async function dropMarker(pinia: Pinia, opts: DropMarkerOptions): Promise
     }
 }
 
-/** Mirrors core's own `DrawToolMode.STATIC` (`api/web/src/stores/modules/draw.ts:36`) — the value
+/** Mirrors core's own `DrawToolMode.STATIC` (`app/src/stores/modules/draw.ts:36`) — the value
  *  `DrawTool.mode` holds when core isn't drawing anything. */
 const CORE_DRAW_STATIC_MODE = "static";
 

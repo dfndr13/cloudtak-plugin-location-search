@@ -71,8 +71,8 @@ import type { SearchResult } from '../lib/search/types.ts';
 
 const SHARE_FLOAT_UID = 'address-search-share';
 
-// Mirrors core's own point-type picker (api/web/src/components/CloudTAK/util/CoordinateType.vue /
-// api/web/src/utils/point-type.ts LegacyPointTypes) so this prompt looks and behaves like the
+// Mirrors core's own point-type picker (app/src/components/CloudTAK/util/CoordinateType.vue /
+// app/src/utils/point-type.ts LegacyPointTypes) so this prompt looks and behaves like the
 // rest of the app instead of inventing a new scheme.
 const POINT_TYPE_OPTIONS = [
     { value: 'u-d-p', label: 'Custom' },

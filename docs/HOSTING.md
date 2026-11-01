@@ -18,10 +18,10 @@ future data updates.
 
 This works because of two things confirmed directly in CloudTAK's own source:
 
-- `api/nginx.conf.js`'s catch-all `location /` block (`alias /home/etl/api/web/dist/; try_files
+- `api/nginx.conf.js`'s catch-all `location /` block (`alias /home/etl/app/dist/; try_files
   $uri ... /index.html;`) serves **any file physically present** in that directory straight off
   disk — nginx's static-file serving handles `Range` requests automatically, with no extra config.
-- That directory (`/home/etl/api/web/dist/`) is a normal path inside the running `api` container,
+- That directory (`/home/etl/app/dist/`) is a normal path inside the running `api` container,
   so a plain Docker bind-mount makes anything you drop on the host side show up there live.
 
 Add a volume to the **existing `api` service** in your `docker-compose.yml` — no new service:
@@ -30,7 +30,7 @@ Add a volume to the **existing `api` service** in your `docker-compose.yml` — 
 services:
   api:
     volumes:
-      - ./data/address-packs:/home/etl/api/web/dist/address-packs
+      - ./data/address-packs:/home/etl/app/dist/address-packs
 ```
 
 Then, on the VPS:
@@ -46,8 +46,8 @@ same origin as CloudTAK, so `Access-Control-Allow-Origin`/CSP's `connect-src` (b
 `'self'`) need no changes, and there's no mixed-content risk. Adding or replacing a `.pack` later
 is just another `scp` into that same host folder — no container restart, no rebuild, no redeploy.
 
-`api/web/plugins/<name>/` can't serve raw files at all (Vite bundles everything there as JS
-source). `api/web/public/` is copied into `dist/` **once, at image build time** — a file dropped
+`app/plugins/<name>/` can't serve raw files at all (Vite bundles everything there as JS
+source). `app/public/` is copied into `dist/` **once, at image build time** — a file dropped
 into `public/` on an already-running container is never picked up. That build-time copy is the
 [baked-in packs](#image-build-publicaddress-search) path below. The bind-mount onto `dist/` is the
 path when you want to add or replace a pack without rebuilding. `dist/` is the directory nginx
@@ -61,10 +61,10 @@ JSON ships in `public/schedule/`. Users do not upload a file or paste a URL. The
 skipping any URL it already stored.
 
 ```sh
-mkdir -p ~/CloudTAK/api/web/public/address-search
-cp az-statewide.pack az-places.pack ~/CloudTAK/api/web/public/address-search/
-chmod 755 ~/CloudTAK/api/web/public/address-search
-chmod 644 ~/CloudTAK/api/web/public/address-search/*.pack
+mkdir -p ~/CloudTAK/app/public/address-search
+cp az-statewide.pack az-places.pack ~/CloudTAK/app/public/address-search/
+chmod 755 ~/CloudTAK/app/public/address-search
+chmod 644 ~/CloudTAK/app/public/address-search/*.pack
 
 # from the address-search plugin repo
 node scripts/write-public-pack-index.mjs
@@ -75,7 +75,7 @@ before any rebuild that changes which packs are in that directory. It writes `in
 names of files whose header is pack magic `CTAS` and version 1 or 2. Nginx will not list the
 directory, so the index is how the plugin finds "any" pack without a hardcoded filename.
 
-The default web root is `~/CloudTAK/api/web` (`--web` or `CLOUDTAK_WEB` override it). A missing
+The default web root is `~/CloudTAK/app` (`--web` or `CLOUDTAK_WEB` override it). A missing
 index leaves the plugin on its usual empty state. Updating packs later without a rebuild is the
 volume mount above, not this directory.
 

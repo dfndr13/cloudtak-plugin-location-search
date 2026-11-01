@@ -1,10 +1,10 @@
 /**
- * Writes CloudTAK/api/web/public/address-search/index.json listing every valid .pack in that
+ * Writes CloudTAK/app/public/address-search/index.json listing every valid .pack in that
  * directory. Run this before a CloudTAK rebuild so Vite copies the packs and the index into
  * dist/. The plugin fetches /address-search/index.json and loads each file.
  *
- * Default web root is ~/CloudTAK/api/web. Override with --web <api/web> or CLOUDTAK_WEB.
- * When this repo is cloned at api/web/plugins/address-search, that web root is used instead.
+ * Default web root is ~/CloudTAK/app. Override with --web <app> or CLOUDTAK_WEB.
+ * When this repo is cloned at app/plugins/address-search, that web root is used instead.
  */
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -31,7 +31,7 @@ export function resolveWebRoot(opts) {
     const webFlag = argv.indexOf('--web');
     if (webFlag !== -1) {
         const value = argv[webFlag + 1];
-        if (!value) throw new Error('--web requires a path to CloudTAK api/web');
+        if (!value) throw new Error('--web requires a path to CloudTAK app');
         return path.resolve(value);
     }
     if (env.CLOUDTAK_WEB) return path.resolve(env.CLOUDTAK_WEB);
@@ -41,11 +41,11 @@ export function resolveWebRoot(opts) {
     if (parentName === 'plugins' && path.basename(repoRoot) === 'address-search') {
         return path.resolve(repoRoot, '..', '..');
     }
-    return path.join(opts.homedir, 'CloudTAK', 'api', 'web');
+    return path.join(opts.homedir, 'CloudTAK', 'app');
 }
 
 /**
- * @param {string} webRoot CloudTAK api/web directory
+ * @param {string} webRoot CloudTAK app directory
  * @param {{ warn?: (message: string) => void }} [opts]
  */
 export async function writePublicPackIndex(webRoot, opts = {}) {

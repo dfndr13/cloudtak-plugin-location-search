@@ -39,7 +39,7 @@ describe("isBundledPackHeader", () => {
 
 describe("resolveWebRoot", () => {
     it("prefers --web, then CLOUDTAK_WEB, then a plugins/address-search checkout, then ~/CloudTAK", () => {
-        const scriptDir = "/opt/cloudtak/api/web/plugins/address-search/scripts";
+        const scriptDir = "/opt/cloudtak/app/plugins/address-search/scripts";
         expect(resolveWebRoot({
             argv: ["--web", "/srv/web"],
             env: { CLOUDTAK_WEB: "/ignored" },
@@ -57,13 +57,13 @@ describe("resolveWebRoot", () => {
             env: {},
             scriptDir,
             homedir: "/home/etl",
-        })).toBe("/opt/cloudtak/api/web");
+        })).toBe("/opt/cloudtak/app");
         expect(resolveWebRoot({
             argv: [],
             env: {},
             scriptDir: "/dev/cloudtak-plugin-address-search/scripts",
             homedir: "/home/etl",
-        })).toBe(path.join("/home/etl", "CloudTAK", "api", "web"));
+        })).toBe(path.join("/home/etl", "CloudTAK", "app"));
     });
 
     it("rejects --web with no path", () => {

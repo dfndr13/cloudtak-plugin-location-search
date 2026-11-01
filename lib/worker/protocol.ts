@@ -1,6 +1,6 @@
 /**
  * Hand-rolled request/response RPC over `postMessage`, instead of Comlink. Investigation found
- * Vite's worker sub-build (in ~/CloudTAK/api/web/vite.config.ts) doesn't inherit the custom
+ * Vite's worker sub-build (in ~/CloudTAK/app/vite.config.ts) doesn't inherit the custom
  * plugin that lets a symlinked plugin bare-import things, so `import * as Comlink from 'comlink'`
  * inside the worker file would likely fail to resolve in the local dev loop — and decision #14
  * forbids fixing that by editing CloudTAK's vite config. This protocol has zero imports, so the

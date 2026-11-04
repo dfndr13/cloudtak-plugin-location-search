@@ -153,6 +153,7 @@ Nobody loads data by hand. Whenever CloudTAK is open and the device is online, t
   so search keeps working during an update, and keeping the user's on/off choice;
 - removes a pack that is no longer listed;
 - puts everything back if the browser's storage was wiped.
+- replaces a copy someone loaded by hand from exactly a listed pack's URL with the managed copy.
 
 If the list can't be fetched (offline, server error, missing file), nothing is changed. A short
 "Updating …" line shows in the search bar while a download runs. Each browser keeps its own local

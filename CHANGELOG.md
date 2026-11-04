@@ -11,6 +11,7 @@ byte-level spec of the `.pack` file this CLI produces.
   match `/address-packs/packs.json` on start-up, when coming back online and every 6 hours. Updates
   download the new copy before removing the old one and keep the user's on/off choice. If the list
   can't be fetched or isn't valid, nothing is changed. One sync at a time across tabs (Web Locks).
+  A copy loaded by hand from exactly a listed pack's URL is replaced by the managed copy.
 - "Updating …" status line in the search bar while a managed download runs.
 - CLI `pack-list` command: writes `packs.json` (id, label, url, SHA-256 version, size).
 

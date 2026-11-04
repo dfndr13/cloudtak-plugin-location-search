@@ -174,6 +174,44 @@ describe("syncManagedPacks", () => {
         expect(await sectionCount()).toBe(before);
     });
 
+    it("replaces a hand-loaded copy of a listed pack's URL, and the new copy starts on", async () => {
+        serve(list({ id: "addr", version: "v1" }, { id: "places", version: "v1" }));
+        await loadFromUrl("https://cloud.example.test/address-packs/addr.pack");
+        const places = await loadFromUrl("https://cloud.example.test/address-packs/places.pack");
+        expect(places.enabled).toBe(false); // second hand-loaded dataset starts off
+        await loadFromUrl("https://elsewhere.example.test/other.pack");
+
+        const result = await syncManagedPacks({ listUrl: LIST_URL });
+        expect(result).toMatchObject({ status: "ok", installed: ["addr", "places"], failed: [] });
+        const ds = await listDatasets();
+        expect(ds.map((d) => [d.managedPackId ?? d.sourceUrl, d.enabled]).sort()).toEqual([
+            ["addr", true],
+            ["https://elsewhere.example.test/other.pack", false],
+            ["places", true],
+        ]);
+    });
+
+    it("removes a hand-loaded duplicate even when the managed copy is already current", async () => {
+        serve(list({ id: "addr", version: "v1" }));
+        await syncManagedPacks({ listUrl: LIST_URL });
+        await loadFromUrl("https://cloud.example.test/address-packs/addr.pack");
+        await syncManagedPacks({ listUrl: LIST_URL });
+        const ds = await listDatasets();
+        expect(ds).toHaveLength(1);
+        expect(ds[0]!.managedPackId).toBe("addr");
+    });
+
+    it("keeps a hand-loaded copy when the managed download fails", async () => {
+        serve(list({ id: "addr", version: "v1" }));
+        await loadFromUrl("https://cloud.example.test/address-packs/addr.pack");
+        serve(list({ id: "addr", version: "v1" }), ["https://cloud.example.test/address-packs/addr.pack"]);
+        const result = await syncManagedPacks({ listUrl: LIST_URL });
+        expect(result).toMatchObject({ status: "ok", failed: [{ id: "addr" }] });
+        const ds = await listDatasets();
+        expect(ds).toHaveLength(1);
+        expect(ds[0]!.managedPackId).toBeUndefined();
+    });
+
     it("tidies a duplicate copy left at the current version", async () => {
         serve(list({ id: "addr", version: "v1" }));
         await syncManagedPacks({ listUrl: LIST_URL });

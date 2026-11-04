@@ -11,7 +11,9 @@
  *   downloaded. The new copy is written first and the old one removed only afterwards, so search
  *   never goes empty during an update.
  * - A managed dataset whose `id` is no longer in the list is removed.
- * - Datasets loaded by hand (no `managedPackId`) are never touched.
+ * - Datasets loaded by hand (no `managedPackId`) are never touched — except a hand-loaded copy
+ *   whose `sourceUrl` is exactly a listed pack's URL (loaded before the list existed): once the
+ *   managed copy is in place, that duplicate is removed.
  * - If the list can't be fetched or isn't valid, NOTHING is changed — a server hiccup or an
  *   offline device must never delete data.
  * - A user's on/off choice for a managed dataset is kept across updates.
@@ -76,22 +78,26 @@ export function parsePackList(raw: unknown, listUrl: string): ManagedPack[] {
 
 /** What a sync would do, given the list and the datasets already in this browser. */
 export function planSync(packs: ManagedPack[], datasets: DatasetRecord[]): {
-    install: { pack: ManagedPack; replaces: DatasetRecord[] }[];
+    /** `replaces` = older managed copies (their on/off choice carries over); `adopts` = hand-loaded
+     *  copies of the same URL (removed after the install, their on/off choice is not kept, since a
+     *  hand-loaded second dataset starts off by default). */
+    install: { pack: ManagedPack; replaces: DatasetRecord[]; adopts: DatasetRecord[] }[];
     remove: DatasetRecord[];
 } {
     const managed = datasets.filter((d) => d.managedPackId !== undefined);
     const listed = new Set(packs.map((p) => p.id));
-    const install: { pack: ManagedPack; replaces: DatasetRecord[] }[] = [];
+    const install: { pack: ManagedPack; replaces: DatasetRecord[]; adopts: DatasetRecord[] }[] = [];
     const remove: DatasetRecord[] = managed.filter((d) => !listed.has(d.managedPackId as string));
     for (const pack of packs) {
         const mine = managed.filter((d) => d.managedPackId === pack.id);
+        const handLoaded = datasets.filter((d) => d.managedPackId === undefined && d.sourceUrl === pack.url);
         const keep = mine.find((d) => d.managedVersion === pack.version);
         if (keep) {
             // Already current. Any other copy (an older version, or a duplicate left by an
             // interrupted run) is tidied away.
-            remove.push(...mine.filter((d) => d !== keep));
+            remove.push(...mine.filter((d) => d !== keep), ...handLoaded);
         } else {
-            install.push({ pack, replaces: mine });
+            install.push({ pack, replaces: mine, adopts: handLoaded });
         }
     }
     return { install, remove };
@@ -120,7 +126,7 @@ async function runSync(opts: SyncOptions): Promise<SyncResult> {
     const failed: { id: string; error: string }[] = [];
 
     for (let i = 0; i < plan.install.length; i++) {
-        const { pack, replaces } = plan.install[i]!;
+        const { pack, replaces, adopts } = plan.install[i]!;
         try {
             await loadFromUrl(pack.url, {
                 label: pack.label,
@@ -136,7 +142,7 @@ async function runSync(opts: SyncOptions): Promise<SyncResult> {
             failed.push({ id: pack.id, error: err instanceof Error ? err.message : String(err) });
             continue;
         }
-        for (const old of replaces) {
+        for (const old of [...replaces, ...adopts]) {
             await removeDataset(old.datasetId);
             removed.push(old.datasetId);
         }

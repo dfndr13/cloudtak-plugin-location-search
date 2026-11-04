@@ -73,38 +73,31 @@
         </div>
 
         <div
+            v-if='managedStatus'
+            class='address-search-bar__status'
+        >
+            Updating {{ managedStatus.label }}{{ managedStatus.packTotal > 1 ? ` (${managedStatus.packIndex} of ${managedStatus.packTotal})` : '' }}…
+            {{ managedStatus.sectionsDone }}/{{ managedStatus.sectionsTotal }}
+        </div>
+
+        <div
             v-if='menuOpen'
             class='address-search-bar__panel'
         >
             <div
-                v-if='datasets.length === 0 && defaultLoading'
-                class='address-search-bar__empty-row'
-            >
-                Loading "{{ defaultPack?.label }}"… {{ defaultProgress.sectionsDone }}/{{ defaultProgress.sectionsTotal }} sections
-            </div>
-            <div
-                v-else-if='datasets.length === 0 && defaultPack'
-                class='address-search-bar__empty-row'
-                role='button'
-                tabindex='0'
-                @click='onLoadDefault'
-            >
-                Load "{{ defaultPack.label }}"
-                <div
-                    v-if='defaultLoadError'
-                    class='address-search-bar__muted'
-                >
-                    {{ defaultLoadError }} — click to retry
-                </div>
-            </div>
-            <div
-                v-else-if='datasets.length === 0'
+                v-if='datasets.length === 0 && isAdmin'
                 class='address-search-bar__empty-row'
                 role='button'
                 tabindex='0'
                 @click='openGear'
             >
                 No datasets loaded — click to add one
+            </div>
+            <div
+                v-else-if='datasets.length === 0'
+                class='address-search-bar__empty-row'
+            >
+                Address data downloads automatically the next time this device is online.
             </div>
             <label
                 v-for='dataset in datasets'
@@ -178,10 +171,9 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { IconCrosshair, IconDatabase, IconHelpCircle, IconMapPinPlus, IconSettings, IconX } from '@tabler/icons-vue';
 import type { MapMouseEvent } from 'maplibre-gl';
-import { api, close, pinia, workerClient } from '../lib/state.ts';
-import { gpsReference, isCoreDrawActive, readDefaultPackConfig, type DefaultPackConfig } from '../lib/core-bridge.ts';
+import { api, close, datasetsVersion, isAdmin, managedStatus, pinia, workerClient } from '../lib/state.ts';
+import { gpsReference, isCoreDrawActive } from '../lib/core-bridge.ts';
 import { listDatasets, setEnabled } from '../lib/storage/dataset-store.ts';
-import { loadFromUrl, type UploadProgress } from '../lib/storage/upload.ts';
 import { syncManifestKv } from '../lib/manifest-sync.ts';
 import type { DatasetRecord } from '../lib/storage/schema.ts';
 import type { SearchResult } from '../lib/search/types.ts';
@@ -201,10 +193,6 @@ const datasets = ref<DatasetRecord[]>([]);
 const inputEl = ref<HTMLInputElement | null>(null);
 const dropOpenIndex = ref<number | null>(null);
 const reverseArmed = ref(false);
-const defaultPack = ref<DefaultPackConfig | undefined>(undefined);
-const defaultLoading = ref(false);
-const defaultLoadError = ref('');
-const defaultProgress = ref<UploadProgress>({ sectionsDone: 0, sectionsTotal: 0, bytesDone: 0, bytesTotal: 0 });
 
 let debounceHandle: ReturnType<typeof setTimeout> | null = null;
 
@@ -218,34 +206,6 @@ async function refreshDatasets(): Promise<void> {
         datasets.value = await listDatasets();
     } catch (err) {
         console.warn('[address-search] failed to list datasets', err);
-    }
-}
-
-/** The one-click "Load <label>" empty-state option (set by whoever configures it in the gear
- *  panel) — only worth checking while there's nothing loaded yet, since it only ever shows in
- *  that empty state. */
-async function refreshDefaultPack(): Promise<void> {
-    try {
-        defaultPack.value = await readDefaultPackConfig();
-    } catch (err) {
-        console.warn('[address-search] failed to read default pack config', err);
-    }
-}
-
-async function onLoadDefault(): Promise<void> {
-    const config = defaultPack.value;
-    if (!config || defaultLoading.value) return;
-    defaultLoading.value = true;
-    defaultLoadError.value = '';
-    try {
-        await loadFromUrl(config.url, { onProgress: (p) => (defaultProgress.value = p) });
-        await workerClient.value?.refresh();
-        await refreshDatasets();
-        void syncManifestKv();
-    } catch (err) {
-        defaultLoadError.value = err instanceof Error ? err.message : String(err);
-    } finally {
-        defaultLoading.value = false;
     }
 }
 
@@ -283,6 +243,8 @@ async function runSearch(): Promise<void> {
     }
     searched.value = true;
 }
+
+watch(datasetsVersion, () => void refreshDatasets());
 
 watch(query, () => {
     if (debounceHandle) clearTimeout(debounceHandle);
@@ -376,7 +338,6 @@ function openHelp(): void {
 
 onMounted(() => {
     void refreshDatasets();
-    void refreshDefaultPack();
     inputEl.value?.focus();
 });
 </script>
@@ -451,5 +412,10 @@ onMounted(() => {
 .address-search-bar__muted {
     opacity: 0.65;
     font-size: 0.85em;
+}
+.address-search-bar__status {
+    padding: 2px 8px;
+    font-size: 0.8em;
+    opacity: 0.75;
 }
 </style>

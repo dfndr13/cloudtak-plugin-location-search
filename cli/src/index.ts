@@ -6,6 +6,7 @@ import { buildGazetteerPack } from "./pack/gazetteer.ts";
 import { printReport, printGazetteerReport } from "./bench/report.ts";
 import { DEFAULT_CELL_SIZE_DEG, DEFAULT_GAZETTEER_CELL_SIZE_DEG } from "./pack/types.ts";
 import { DEFAULT_GAZETTEER_CLASSES } from "./ingest/gnis.ts";
+import { buildPackList, parseLabels } from "./pack/pack-list.ts";
 
 const program = new Command();
 
@@ -67,6 +68,18 @@ program
         console.log(`wrote ${options.out}`);
         console.log();
         printGazetteerReport(stats);
+    });
+
+program
+    .command("pack-list")
+    .description("Write the packs.json list that CloudTAK browsers sync their datasets from")
+    .argument("<packs...>", ".pack files (packs.json must be served from the same folder)")
+    .requiredOption("-o, --out <path>", "output packs.json path")
+    .option("--label <id=Text>", "display label for a pack (repeatable); defaults to the file name", (v: string, acc: string[]) => [...acc, v], [] as string[])
+    .action(async (packs: string[], options: { out: string; label: string[] }) => {
+        const list = await buildPackList(packs, parseLabels(options.label));
+        await writeFile(options.out, JSON.stringify(list, null, 2) + "\n");
+        console.log(`wrote ${options.out} (${list.packs.length} packs)`);
     });
 
 program.parseAsync(process.argv);

@@ -4,6 +4,28 @@ An address search bar using openaddresses.io for CloudTAK. See [`docs/PLAN.md`](
 the full architecture and phased plan, and [`docs/PACK_FORMAT.md`](docs/PACK_FORMAT.md) for the
 byte-level spec of the `.pack` file this CLI produces.
 
+## Fork: server-managed packs (unreleased)
+
+### Added
+- Automatic pack sync (`lib/managed-packs.ts`): browsers install, update and remove datasets to
+  match `/address-packs/packs.json` on start-up, when coming back online and every 6 hours. Updates
+  download the new copy before removing the old one and keep the user's on/off choice. If the list
+  can't be fetched or isn't valid, nothing is changed. One sync at a time across tabs (Web Locks).
+- "Updating …" status line in the search bar while a managed download runs.
+- CLI `pack-list` command: writes `packs.json` (id, label, url, SHA-256 version, size).
+
+### Changed
+- Manual loading (file picker, URL field, remove buttons, online-fallback API keys) is shown only to
+  CloudTAK system admins (profile `system_admin`). Other users see what's loaded and can switch
+  datasets on or off.
+- Removed the "Default dataset (shared)" setting and its one-click "Load" button. It was stored in
+  each browser's own `db.kv`, so it was never shared, and the pack list replaces it.
+- README setup steps 4 and 5 describe the pack list. The volume path is updated for CloudTAK v13.110
+  and later (`/home/etl/app/dist`).
+
+### Fixed
+- A load that fails part-way no longer leaves its already-downloaded sections behind in IndexedDB.
+
 ## Status
 
 **Phase 1 (offline prep CLI + pack format) — done, verified at full-state scale.** The CLI ingests

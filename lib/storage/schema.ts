@@ -29,6 +29,11 @@ interface DatasetRecordCommon {
     sourceUrl?: string;
     /** Result of `navigator.storage.persist()` at load time (docs/PLAN.md §5). */
     persisted: boolean;
+    /** Set only for a dataset installed from the server's pack list (lib/managed-packs.ts): the
+     *  list entry's `id`. Absent for anything loaded by hand. */
+    managedPackId?: string;
+    /** The list entry's `version` this dataset was installed from — a change triggers a reload. */
+    managedVersion?: string;
 }
 
 export interface AddressDatasetRecord extends DatasetRecordCommon {

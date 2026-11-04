@@ -44,9 +44,9 @@
                 :size='16'
                 stroke='2'
                 class='address-search-help__inline-icon'
-            /> icon to add a dataset from a <code>.pack</code> file or a URL, remove one, or set an
-            online-fallback API key. Address data is offline-first — nothing here requires a network connection
-            once a dataset is loaded.
+            /> icon to see what's loaded on this device. Address data is downloaded and kept up to date
+            automatically whenever the device is online, and search works offline once it's here. Loading other
+            data by hand is limited to CloudTAK system admins.
         </p>
     </div>
 </template>

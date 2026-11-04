@@ -9,6 +9,7 @@ import * as state from './lib/state.ts';
 import { SearchWorkerClient } from './lib/worker/worker-client.ts';
 import { syncManifestKv } from './lib/manifest-sync.ts';
 import { deleteManifestKv } from './lib/core-bridge.ts';
+import { syncManagedPacks } from './lib/managed-packs.ts';
 import AddressSearchToggle from './components/AddressSearchToggle.vue';
 import type { SearchOptions, SearchResult } from './lib/search/types.ts';
 
@@ -17,6 +18,10 @@ const BOTTOM_BAR_KEY = 'address-search';
  *  manifest key (lib/core-bridge.ts's `MANIFEST_KV_KEY`), just on `window` instead of `db.kv`,
  *  since a live callable can't be stored as a `db.kv` string. See docs/cross-plugin-api.d.ts. */
 const WINDOW_API_KEY = 'addresssearch:api';
+/** Same-origin pack list published by the CloudTAK operator next to the .pack files. */
+const PACK_LIST_PATH = '/address-packs/packs.json';
+/** Long-open tabs (vehicle laptops) re-check the list this often, so updates still arrive. */
+const RECHECK_MS = 6 * 60 * 60 * 1000;
 
 /** Trims lib/search/types.ts's internal SearchResult down to the public contract (docs/
  *  cross-plugin-api.d.ts's AddressSearchResult) — explicitly listing fields rather than
@@ -45,6 +50,10 @@ function toPublicResult(result: SearchResult) {
 
 export default class AddressSearchPlugin implements PluginInstance {
     api: PluginAPI;
+    private recheckTimer: ReturnType<typeof setInterval> | null = null;
+    private adminSub: { unsubscribe(): void } | null = null;
+    private syncing = false;
+    private readonly onOnline = (): void => void this.syncPacks();
 
     constructor(api: PluginAPI) {
         this.api = api;
@@ -80,9 +89,60 @@ export default class AddressSearchPlugin implements PluginInstance {
             },
         };
         void syncManifestKv();
+
+        // Streamed, not read once: the profile may not have synced yet when the plugin starts.
+        this.adminSub = this.api.profile.stream('system_admin').subscribe({
+            next: (admin) => { state.isAdmin.value = admin === true; },
+            error: () => { state.isAdmin.value = false; },
+        });
+
+        window.addEventListener('online', this.onOnline);
+        this.recheckTimer = setInterval(() => void this.syncPacks(), RECHECK_MS);
+        void this.syncPacks();
+    }
+
+    /** Installs/updates/removes server-managed packs. Offline (or list unreachable) = no change. */
+    private async syncPacks(): Promise<void> {
+        if (!navigator.onLine || this.syncing) return;
+        this.syncing = true;
+        try {
+            const result = await syncManagedPacks({
+                listUrl: new URL(PACK_LIST_PATH, window.location.origin).toString(),
+                onProgress: (p) => {
+                    state.managedStatus.value = {
+                        label: p.label,
+                        packIndex: p.packIndex,
+                        packTotal: p.packTotal,
+                        sectionsDone: p.sectionsDone,
+                        sectionsTotal: p.sectionsTotal,
+                    };
+                },
+            });
+            if (result.status === 'ok') {
+                for (const f of result.failed) console.warn(`[address-search] pack ${f.id} failed to load: ${f.error}`);
+                if (result.installed.length > 0 || result.removed.length > 0) {
+                    await state.workerClient.value?.refresh();
+                    state.datasetsVersion.value++;
+                    void syncManifestKv();
+                }
+            } else if (result.status === 'unavailable') {
+                console.warn(`[address-search] pack list unavailable, nothing changed: ${result.reason}`);
+            }
+        } catch (err) {
+            console.error('[address-search] managed pack sync failed', err);
+        } finally {
+            state.managedStatus.value = null;
+            this.syncing = false;
+        }
     }
 
     async disable(): Promise<void> {
+        window.removeEventListener('online', this.onOnline);
+        if (this.recheckTimer) clearInterval(this.recheckTimer);
+        this.recheckTimer = null;
+        this.adminSub?.unsubscribe();
+        this.adminSub = null;
+        state.isAdmin.value = false;
         this.api.bottomBar.remove(BOTTOM_BAR_KEY);
 
         delete (window as unknown as Record<string, unknown>)[WINDOW_API_KEY];

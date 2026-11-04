@@ -6,7 +6,7 @@
  */
 import { idbPut } from "./idb.ts";
 import { withAddressSearchDb, SECTIONS_STORE, sectionKey, type DatasetRecord } from "./schema.ts";
-import { createDataset, generateDatasetId, listDatasets } from "./dataset-store.ts";
+import { createDataset, generateDatasetId, listDatasets, removeSections } from "./dataset-store.ts";
 import { readPackManifest, readGazetteerManifest, verifySection } from "../pack/container.ts";
 import { PACK_VERSION_GAZETTEER, type PackManifest, type GazetteerManifest } from "../pack/types.ts";
 
@@ -20,6 +20,10 @@ export interface UploadProgress {
 export interface UploadOptions {
     label?: string;
     onProgress?: (progress: UploadProgress) => void;
+    /** Overrides the "first dataset is enabled" default (decision #8). */
+    enabled?: boolean;
+    /** Marks the dataset as installed from the server's pack list (lib/managed-packs.ts). */
+    managed?: { id: string; version: string };
 }
 
 interface ByteRangeReader {
@@ -75,13 +79,31 @@ async function writeSections(
     });
 }
 
+/** A load that fails part-way (network drop, bad checksum) would otherwise leave its already
+ *  written sections behind with no dataset record pointing at them — dead storage that nothing
+ *  ever cleans up. Remove them, then rethrow. */
+async function writeSectionsOrCleanUp(
+    reader: ByteRangeReader,
+    manifest: PackManifest | GazetteerManifest,
+    datasetId: string,
+    onProgress?: (p: UploadProgress) => void,
+): Promise<void> {
+    try {
+        await writeSections(reader, manifest, datasetId, onProgress);
+    } catch (err) {
+        await removeSections(datasetId).catch(() => undefined);
+        throw err;
+    }
+}
+
 async function finalizeDataset(
     parsed: ReadManifestResult,
     datasetId: string,
     opts: UploadOptions & { sourceUrl?: string },
 ): Promise<DatasetRecord> {
     const existing = await listDatasets();
-    const enabled = existing.length === 0; // decision #8: default is one enabled
+    const enabled = opts.enabled ?? existing.length === 0; // decision #8: default is one enabled
+    const managed = opts.managed ? { managedPackId: opts.managed.id, managedVersion: opts.managed.version } : {};
     const input =
         parsed.kind === "address"
             ? {
@@ -92,6 +114,7 @@ async function finalizeDataset(
                   cellSizeDeg: parsed.manifest.cellSizeDeg,
                   manifest: parsed.manifest,
                   sourceUrl: opts.sourceUrl,
+                  ...managed,
               }
             : {
                   kind: "gazetteer" as const,
@@ -101,6 +124,7 @@ async function finalizeDataset(
                   cellSizeDeg: parsed.manifest.cellSizeDeg,
                   manifest: parsed.manifest,
                   sourceUrl: opts.sourceUrl,
+                  ...managed,
               };
     return createDataset(input, enabled, datasetId);
 }
@@ -122,7 +146,7 @@ export async function loadFromFile(file: File, opts: UploadOptions = {}): Promis
     const reader = new FileRangeReader(file);
     const parsed = await readManifest(reader);
     const datasetId = generateDatasetId();
-    await writeSections(reader, parsed.manifest, datasetId, opts.onProgress);
+    await writeSectionsOrCleanUp(reader, parsed.manifest, datasetId, opts.onProgress);
     return finalizeDataset(parsed, datasetId, opts);
 }
 
@@ -164,6 +188,6 @@ export async function loadFromUrl(url: string, opts: UploadOptions = {}): Promis
     const reader = new UrlRangeReader(url);
     const parsed = await readManifest(reader);
     const datasetId = generateDatasetId();
-    await writeSections(reader, parsed.manifest, datasetId, opts.onProgress);
+    await writeSectionsOrCleanUp(reader, parsed.manifest, datasetId, opts.onProgress);
     return finalizeDataset(parsed, datasetId, { ...opts, sourceUrl: url });
 }

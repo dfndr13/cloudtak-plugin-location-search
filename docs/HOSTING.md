@@ -1,5 +1,10 @@
 # Hosting `.pack` files for the fetch-from-URL load path
 
+> **This fork:** browsers load packs automatically from `packs.json` in the same folder (see the
+> README's steps 4 and 5). Everything below still applies to serving the files. Run the CLI's
+> `pack-list` command after every change to the folder. The paths below that use
+> `/home/etl/api/web/dist` are for CloudTAK before v13.110; newer releases use `/home/etl/app/dist`.
+
 **Required for any shared/production CloudTAK instance** — see the main
 [README's setup walkthrough](../README.md#4-host-the-pack-file-required-for-more-than-one-user)
 for why. Address data lives in each browser's own local IndexedDB, never on a server, so there is

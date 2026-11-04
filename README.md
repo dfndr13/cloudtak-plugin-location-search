@@ -114,48 +114,57 @@ then add its URL to `WEB_PLUGINS` wherever that's set for your deployment (a `do
 if that fails, the image build fails, so it's worth running the same check yourself first (see
 [Verifying a change](#verifying-a-change) below).
 
-### 4. Host the `.pack` file (required for more than one user)
+### 4. Host the `.pack` files and the pack list
 
-The plugin's gear panel has two ways to load a `.pack`: pick a local file, or paste a URL. **The
-file picker only loads data into the browser doing the picking** — it does not upload to a server
-or make the data available to anyone else. For every other user to get the same data without you
-handing them the file directly, the `.pack` needs to be reachable over HTTP so their browser can
-fetch it via the URL field.
-
-If you run CloudTAK's own `docker-compose.yml`, the simplest way is serving it from the **same
-origin as CloudTAK itself** — no separate container, no CORS, no CSP change, and no rebuild needed
-for future data updates. Add a volume to the existing `api` service:
+Every browser downloads its data from your CloudTAK server automatically, so the `.pack` files and a
+small pack list (`packs.json`) must be reachable over HTTP. The simplest way is serving them from
+the **same origin as CloudTAK itself**: no separate container, no CORS, no CSP change, and no
+rebuild needed for future data updates. Add a volume to the existing `api` service:
 
 ```yaml
 services:
   api:
     volumes:
-      - ./data/address-packs:/home/etl/api/web/dist/address-packs
+      - ./data/address-packs:/home/etl/app/dist/address-packs:ro
 ```
 
-Restart the `api` service once to pick up the mount, then `scp` (or otherwise copy) `.pack` files
-into `./data/address-packs/` on the host — each one becomes reachable immediately at
-`https://<your-cloudtak-domain>/address-packs/<file>.pack`, live, with no further restarts. See
-[`docs/HOSTING.md`](docs/HOSTING.md) for the full explanation of why this works (nginx serves
-anything physically present in `dist/`) and an alternative (a standalone static-file-server
-container) for when you don't control the CloudTAK deployment directly.
+(CloudTAK releases before v13.110 used `/home/etl/api/web/dist/address-packs` instead.) Restart the
+`api` service once to pick up the mount. Copy the `.pack` files into `./data/address-packs/` on the
+host, then write the pack list next to them:
 
-### 5. Load the data
+```bash
+node cli/src/index.ts pack-list data/address-packs/*.pack \
+    --label "state-addresses=State addresses" --label "state-places=State places" \
+    --out data/address-packs/packs.json
+```
 
-In CloudTAK, click the search icon in the map controls, then the gear icon. Either pick the
-`.pack` file directly, or paste the hosting URL from step 4 and click **Load**. Every other user
-does the same with the same URL — each browser keeps its own local copy (see
-[Architecture](#architecture) for why), so this is a one-time step per person, not per instance.
-This works identically for an address pack or a gazetteer pack — both show up as datasets you can
-toggle on/off, and a search merges results from every enabled one.
+Each pack's `id` is its file name without `.pack` (keep the name the same across rebuilds), and its
+`version` is the file's SHA-256. **Re-run `pack-list` every time you add, rebuild or remove a
+pack.** See [`docs/HOSTING.md`](docs/HOSTING.md) for why serving from `dist/` works and for an
+alternative (a standalone static-file-server container).
 
-**Optional: make it a one-click option for everyone else.** In that same gear panel, under
-"Default dataset (shared)", enter a label and the hosting URL and click **Save as default**. This
-is stored server-side (CloudTAK's `db.kv`, not your browser), so *every other user* who opens the
-search bar with nothing loaded yet sees a single "Load `<label>`" button instead of needing to
-know or paste the URL themselves — one click, no typing. There's no admin/permission gate on this
-(the plugin API doesn't expose one), so anyone with the gear panel open can set or change it —
-worth keeping in mind since it affects everyone on the instance, not just the person setting it.
+### 5. Users get the data automatically
+
+Nobody loads data by hand. Whenever CloudTAK is open and the device is online, the plugin reads
+`/address-packs/packs.json` (at start-up, when the device comes back online, and every 6 hours) and:
+
+- downloads any listed pack this browser doesn't have yet, all switched on;
+- replaces a pack whose `version` changed, downloading the new copy before removing the old one,
+  so search keeps working during an update, and keeping the user's on/off choice;
+- removes a pack that is no longer listed;
+- puts everything back if the browser's storage was wiped.
+
+If the list can't be fetched (offline, server error, missing file), nothing is changed. A short
+"Updating …" line shows in the search bar while a download runs. Each browser keeps its own local
+copy (see [Architecture](#architecture) for why), so the first download happens once per
+device/browser. On iPhones and iPads, adding CloudTAK to the home screen stops Safari from deleting
+the data after 7 days without use.
+
+**Manual loading is for CloudTAK system admins only.** Admins (profile `system_admin`) still see
+the gear panel's file picker, URL field, remove buttons and online-fallback API keys, for example to
+try a new pack in their own browser before adding it to the list. Everyone else only sees what's
+loaded and can switch datasets on or off. This hides the controls in the interface; it is not a
+security boundary (a manual load only ever affects the user's own browser).
 
 ## Architecture
 

@@ -55,6 +55,8 @@ export type NewDatasetInput =
           cellSizeDeg: number;
           manifest: PackManifest;
           sourceUrl?: string;
+          managedPackId?: string;
+          managedVersion?: string;
       }
     | {
           kind: "gazetteer";
@@ -64,6 +66,8 @@ export type NewDatasetInput =
           cellSizeDeg: number;
           manifest: GazetteerManifest;
           sourceUrl?: string;
+          managedPackId?: string;
+          managedVersion?: string;
       };
 
 /**
@@ -90,6 +94,8 @@ export async function createDataset(
         createdAt: new Date().toISOString(),
         sourceUrl: input.sourceUrl,
         persisted,
+        ...(input.managedPackId !== undefined ? { managedPackId: input.managedPackId } : {}),
+        ...(input.managedVersion !== undefined ? { managedVersion: input.managedVersion } : {}),
     };
     const record: DatasetRecord =
         input.kind === "address"
@@ -113,6 +119,12 @@ export function renameDataset(datasetId: string, label: string): Promise<void> {
         if (!record) throw new Error(`dataset not found: ${datasetId}`);
         await idbPut(db, DATASETS_STORE, { ...normalizeDataset(record), label });
     });
+}
+
+/** Removes the section records written for a dataset whose record was never created (a load
+ *  that failed part-way). Safe to call for an id that has no sections. */
+export function removeSections(datasetId: string): Promise<void> {
+    return withAddressSearchDb((db) => idbDeleteRange(db, SECTIONS_STORE, prefixRange(`${datasetId}:`)));
 }
 
 /** Removes the dataset record and every one of its section records. */

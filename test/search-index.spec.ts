@@ -1,6 +1,8 @@
 import { fileURLToPath } from "node:url";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, beforeAll } from "vitest";
+import { afterAll, describe, expect, it, beforeAll } from "vitest";
 import { buildPack } from "../cli/src/pack/build.ts";
 import { InMemoryPackSource } from "../lib/pack/pack-source.ts";
 import { SearchIndex } from "../lib/search/search-index.ts";
@@ -85,6 +87,70 @@ describe("SearchIndex, against a real pack built from the shared fixture", () =>
 
     it("returns no results for a query with no street text at all", async () => {
         expect(await index.search("12345")).toEqual([]);
+    });
+});
+
+describe("SearchIndex, a street typed without its direction", () => {
+    let index: SearchIndex;
+    let dir: string;
+
+    const address = (number: string, street: string, city: string, lon: number) => JSON.stringify({
+        type: "Feature",
+        properties: { number, street, unit: "", city, district: "", region: "KS", postcode: "67000", hash: `${number}${street}${city}` },
+        geometry: { type: "Point", coordinates: [lon, 38.5] },
+    });
+
+    const streets = (results: { streetDisplay: string; city: string }[]) => results.map((r) => `${r.streetDisplay}, ${r.city}`);
+
+    beforeAll(async () => {
+        dir = await mkdtemp(path.join(os.tmpdir(), "search-index-"));
+        const file = path.join(dir, "directions.ndjson");
+        await writeFile(file, [
+            address("10", "N 5th St", "Testville", -97.5),
+            address("20", "S 5th St", "Testville", -97.6),
+            address("30", "E 6th St", "Testville", -97.7),
+            // "5TH ST" exists elsewhere, as it does in real data: that exact match is what stops fuzzy
+            // matching from reaching "N 5TH ST", so only the direction fallback can find it.
+            address("40", "5th St", "Othertown", -98.5),
+            address("50", "Oak St", "Testville", -97.8),
+            address("60", "N Oak St", "Testville", -97.9),
+        ].join("\n") + "\n");
+        const { pack } = await buildPack({ inputFiles: [file], region: "KS" });
+        index = await SearchIndex.open(new InMemoryPackSource(new Uint8Array(pack)));
+    });
+
+    afterAll(async () => {
+        await rm(dir, { recursive: true, force: true });
+    });
+
+    it("finds every direction of the street in that town, and no similar street", async () => {
+        const results = await index.search("5th St, Testville");
+        expect(streets(results).sort()).toEqual(["N 5th St, Testville", "S 5th St, Testville"]);
+    });
+
+    it("works without a comma, with the state after the town", async () => {
+        const results = await index.search("5th St Testville Ks");
+        expect(streets(results).sort()).toEqual(["N 5th St, Testville", "S 5th St, Testville"]);
+    });
+
+    it("ranks the street that has the house number first", async () => {
+        const results = await index.search("20 5th St, Testville");
+        expect(results[0]!.streetDisplay).toBe("S 5th St");
+        expect(results[0]!.number).toBe(20);
+    });
+
+    it("sorts by distance when the numbers don't decide it, and honours the limit", async () => {
+        const results = await index.search("5th St, Testville", { reference: { lat: 38.5, lon: -97.6 }, limit: 1 });
+        expect(streets(results)).toEqual(["S 5th St, Testville"]);
+    });
+
+    it("isn't used when the query matches as typed", async () => {
+        expect(streets(await index.search("Oak St, Testville"))).toEqual(["Oak St, Testville"]);
+        expect(streets(await index.search("N 5th St, Testville"))).toEqual(["N 5th St, Testville"]);
+    });
+
+    it("doesn't bring a street in from another town", async () => {
+        expect(await index.search("Oak St, Othertown")).toEqual([]);
     });
 });
 

@@ -38,6 +38,11 @@ describe("GazetteerIndex, against a real pack built from the shared fixture", ()
         expect(results[0]!.units).toEqual([]);
     });
 
+    it("ignores a state or county after a comma", async () => {
+        const results = await index.search("Mount Elden, AZ");
+        expect(results[0]!.displayAddress).toContain("Mount Elden");
+    });
+
     it("finds a prefix match", async () => {
         const results = await index.search("Mount Eld");
         expect(results).toHaveLength(1);

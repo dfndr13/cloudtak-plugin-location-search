@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseQuery } from "../lib/search/query-parse.ts";
+import { directionVariants, parseQuery, placeSplits } from "../lib/search/query-parse.ts";
 
 describe("parseQuery", () => {
     it("extracts a leading house number", () => {
@@ -44,5 +44,40 @@ describe("parseQuery", () => {
 
     it("returns empty streetQuery for a blank query", () => {
         expect(parseQuery("   ").streetQuery).toBe("");
+    });
+});
+
+describe("placeSplits", () => {
+    it("reads trailing words as the place, fewest first", () => {
+        const splits = placeSplits(parseQuery("123 Main St Mesa Az"));
+        expect(splits.map((s) => [s.streetQuery, s.placeHint])).toEqual([
+            ["MAIN ST MESA", "Az"],
+            ["MAIN ST", "Mesa Az"],
+            ["MAIN", "St Mesa Az"],
+        ]);
+        expect(splits[0]!.number).toBe(123);
+    });
+
+    it("offers nothing when the query already names a place, or has one street word", () => {
+        expect(placeSplits(parseQuery("123 Main St, Mesa"))).toEqual([]);
+        expect(placeSplits(parseQuery("Main"))).toEqual([]);
+    });
+});
+
+describe("directionVariants", () => {
+    it("puts each direction in front of the street and keeps the rest of the query", () => {
+        const variants = directionVariants(parseQuery("100 10th St, Salina"));
+        expect(variants.map((v) => v.streetQuery)).toEqual([
+            "N 10TH ST", "S 10TH ST", "E 10TH ST", "W 10TH ST", "NE 10TH ST", "NW 10TH ST", "SE 10TH ST", "SW 10TH ST",
+        ]);
+        expect(variants[0]!.number).toBe(100);
+        expect(variants[0]!.placeHint).toBe("Salina");
+    });
+
+    it("offers nothing when the street already has a direction, or there is no street", () => {
+        expect(directionVariants(parseQuery("N 10th St"))).toEqual([]);
+        expect(directionVariants(parseQuery("North 10th St"))).toEqual([]);
+        expect(directionVariants(parseQuery("SW 10th Ave"))).toEqual([]);
+        expect(directionVariants(parseQuery("12345"))).toEqual([]);
     });
 });

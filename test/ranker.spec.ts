@@ -37,6 +37,22 @@ describe("rankGroups", () => {
         expect(ranked[0]!.group.placeId).toBe(2);
     });
 
+    it("accepts a place hint that carries a state or postcode after the town", () => {
+        const groups = [group({ streetId: 0, placeId: 1 }), group({ streetId: 0, placeId: 2 })];
+        const matches: StreetMatch[] = [{ streetId: 0, tier: "exact", editDistance: 0 }];
+        for (const placeHint of ["Mesa Az", "Mesa Az 85201", "Mesa Arizona"]) {
+            const ranked = rankGroups(groups, matches, { places: PLACES, placeHint, postcodeHint: null, limit: 10 });
+            expect(ranked.map((r) => r.group.placeId)).toEqual([1]);
+        }
+    });
+
+    it("does not treat a longer town name as a match for a shorter one, or for an empty place", () => {
+        const groups = [group({ streetId: 0, placeId: 0 }), group({ streetId: 0, placeId: 1 })];
+        const matches: StreetMatch[] = [{ streetId: 0, tier: "exact", editDistance: 0 }];
+        const ranked = rankGroups(groups, matches, { places: PLACES, placeHint: "Mesas Az", postcodeHint: null, limit: 10 });
+        expect(ranked).toHaveLength(0);
+    });
+
     it("filters by postcode hint", () => {
         const groups = [group({ streetId: 0, postcodeId: 3 }), group({ streetId: 0, postcodeId: 4 })];
         const matches: StreetMatch[] = [{ streetId: 0, tier: "exact", editDistance: 0 }];

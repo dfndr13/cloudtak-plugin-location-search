@@ -66,12 +66,12 @@ describe("placeSplits", () => {
 
 describe("directionVariants", () => {
     it("puts each direction in front of the street and keeps the rest of the query", () => {
-        const variants = directionVariants(parseQuery("100 10th St, Salina"));
+        const variants = directionVariants(parseQuery("100 10th St, Springfield"));
         expect(variants.map((v) => v.streetQuery)).toEqual([
             "N 10TH ST", "S 10TH ST", "E 10TH ST", "W 10TH ST", "NE 10TH ST", "NW 10TH ST", "SE 10TH ST", "SW 10TH ST",
         ]);
         expect(variants[0]!.number).toBe(100);
-        expect(variants[0]!.placeHint).toBe("Salina");
+        expect(variants[0]!.placeHint).toBe("Springfield");
     });
 
     it("offers nothing when the street already has a direction, or there is no street", () => {
